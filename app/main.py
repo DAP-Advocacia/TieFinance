@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import (BigInteger, Boolean, Date, DateTime, ForeignKey, Integer,
-                        String, Text, create_engine, select)
+                        LargeBinary, String, Text, create_engine, event, select)
 from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column,
                             relationship, sessionmaker)
 
@@ -40,6 +40,13 @@ STATUS = {"pending", "approved", "rejected", "paid", "cancelled"}
 
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
+if os.getenv("DB_SCHEMA"):  # isola testes em um schema proprio (PostgreSQL)
+    @event.listens_for(engine, "connect")
+    def _set_schema(dbapi_conn, _):
+        cur = dbapi_conn.cursor()
+        cur.execute(f'SET search_path TO "{os.environ["DB_SCHEMA"]}"')
+        cur.close()
+        dbapi_conn.commit()
 
 
 def now() -> datetime:
@@ -113,6 +120,12 @@ class Payment(Base):
     payee: Mapped[Payee] = relationship()
     creator: Mapped[User] = relationship(foreign_keys=[created_by])
     decider: Mapped[Optional[User]] = relationship(foreign_keys=[decided_by])
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Audit(Base):
@@ -291,28 +304,24 @@ def change_password(d: PasswordIn, authorization: str = Header(default=""), u: U
 
 @app.get("/api/backup")
 def backup(u: User = Depends(require("admin")), db: Session = Depends(get_db)):
-    """Zip com copia consistente do banco SQLite + anexos."""
-    import sqlite3
-    import tempfile
+    """Exportacao (zip): CSV de cada tabela (sem senhas/sessoes) + anexos. Independe do banco usado."""
     import zipfile
-    if not DB_URL.startswith("sqlite"):
-        raise HTTPException(501, "Backup via app so para SQLite; use pg_dump no PostgreSQL")
     buf = io.BytesIO()
-    with tempfile.TemporaryDirectory() as td:
-        copy = Path(td) / "pvp.db"
-        src = sqlite3.connect(DATA / "pvp.db")
-        dst = sqlite3.connect(copy)
-        src.backup(dst)
-        src.close()
-        dst.close()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            z.write(copy, "pvp.db")
-            for f in UPLOADS.iterdir():
-                z.write(f, f"uploads/{f.name}")
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for model in (Company, Payee, User, Payment, Audit):
+            cols = [c.name for c in model.__table__.columns if c.name != "password"]
+            sio = io.StringIO()
+            w = csv.writer(sio, delimiter=";")
+            w.writerow(cols)
+            for r in db.scalars(select(model)):
+                w.writerow([getattr(r, c) for c in cols])
+            z.writestr(f"{model.__tablename__}.csv", "﻿" + sio.getvalue())
+        for a in db.scalars(select(Attachment)):
+            z.writestr(f"anexos/{a.id}", a.data)
     log(db, u, "backup.download")
     db.commit()
     return Response(buf.getvalue(), media_type="application/zip",
-                    headers={"Content-Disposition": f'attachment; filename="backup-{date.today()}.zip"'})
+                    headers={"Content-Disposition": f'attachment; filename="exportacao-{date.today()}.zip"'})
 
 
 # ----- usuarios / empresas (admin) -----
@@ -469,7 +478,7 @@ def snap(p: Payment) -> dict:
                 cost_center=p.cost_center, status=p.status)
 
 
-def save_upload(f: Optional[UploadFile]):
+def save_upload(db: Session, f: Optional[UploadFile]):
     if not f or not f.filename:
         return None, None
     ext = Path(f.filename).suffix.lower()
@@ -479,7 +488,7 @@ def save_upload(f: Optional[UploadFile]):
     if len(content) > MAX_UPLOAD:
         raise HTTPException(422, "Anexo acima de 10 MB")
     name = new_id() + ext
-    (UPLOADS / name).write_bytes(content)
+    db.add(Attachment(id=name, data=content))
     return name, Path(f.filename).name[:200]
 
 
@@ -588,7 +597,7 @@ def create_payment(company_id: str = Form(...), payee_id: str = Form(...), descr
                    u: User = Depends(require("financeiro", "admin")), db: Session = Depends(get_db)):
     if not db.get(Company, company_id) or not db.get(Payee, payee_id):
         raise HTTPException(404, "CNPJ ou favorecido inexistente")
-    att, att_name = save_upload(file)
+    att, att_name = save_upload(db, file)
     p = Payment(company_id=company_id, payee_id=payee_id, description=description.strip()[:300],
                 amount_cents=to_cents(amount), pay_date=parse_date(pay_date), cost_center=cost_center.strip()[:80],
                 attachment=att, attachment_name=att_name, created_by=u.id)
@@ -613,7 +622,7 @@ def edit_payment(pid: str, company_id: str = Form(...), payee_id: str = Form(...
     if not db.get(Company, company_id) or not db.get(Payee, payee_id):
         raise HTTPException(404, "CNPJ ou favorecido inexistente")
     before = snap(p)
-    att, att_name = save_upload(file)
+    att, att_name = save_upload(db, file)
     p.company_id, p.payee_id = company_id, payee_id
     p.description, p.amount_cents = description.strip()[:300], to_cents(amount)
     p.pay_date, p.cost_center = parse_date(pay_date), cost_center.strip()[:80]
@@ -724,7 +733,16 @@ def attachment(pid: str, u: User = Depends(current_user), db: Session = Depends(
         raise HTTPException(404, "Sem anexo")
     log(db, u, "attachment.view", "payment", p.id)
     db.commit()
-    return FileResponse(UPLOADS / p.attachment, filename=p.attachment_name)
+    row = db.get(Attachment, p.attachment)
+    if row:
+        data = row.data
+    elif (UPLOADS / p.attachment).exists():  # anexos antigos em disco
+        data = (UPLOADS / p.attachment).read_bytes()
+    else:
+        raise HTTPException(404, "Arquivo do anexo nao encontrado")
+    ext = Path(p.attachment).suffix.lower()
+    mt = {".pdf": "application/pdf", ".png": "image/png"}.get(ext, "image/jpeg")
+    return Response(data, media_type=mt, headers={"Content-Disposition": f'inline; filename="{p.attachment_name or p.attachment}"'})
 
 
 # ----- conciliacao por extrato -----

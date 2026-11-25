@@ -109,6 +109,11 @@ with TestClient(app) as c:
     assert c.get("/api/backup", headers=thy).status_code == 403
     bk = c.get("/api/backup", headers=adm)
     assert bk.status_code == 200 and bk.content[:2] == b"PK"
+    import io, zipfile
+    zn = zipfile.ZipFile(io.BytesIO(bk.content)).namelist()
+    assert "payments.csv" in zn and "users.csv" in zn and any(n.startswith("anexos/") for n in zn)
+    ct = c.get(f"/api/payments/{p1}/attachment", headers=bru)
+    assert ct.headers["content-type"] == "application/pdf" and ct.content.startswith(b"%PDF")
     assert c.post("/api/me/password", headers=mar, json={"current": "SenhaForte#1234", "new": "NovaSenha#12345"}).status_code == 200
     login(c, "mariana@t.com", "NovaSenha#12345")
     # limite de tentativas

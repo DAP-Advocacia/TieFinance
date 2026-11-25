@@ -309,7 +309,7 @@ async function loadAud(){const q=new URLSearchParams({action:$('#a_action').valu
 /* ---------- administração ---------- */
 async function vAdm(){
   const us=await J('/users');
-  $('#body').innerHTML=panel('Backup','Zip com banco e anexos',`<button class=primary onclick="download('/backup','backup.zip')">Baixar backup</button>`)+
+  $('#body').innerHTML=panel('Exportar dados','Zip com CSV das tabelas e os anexos (o banco tem backup próprio no Supabase)',`<button class=primary onclick="download('/backup','exportacao.zip')">Exportar dados</button>`)+
   panel('CNPJs pagadores','Variações da DAP Advocacia',`<form class=filters style="border:0;padding:0" onsubmit="return addCo(event)"><label>Nome<input name=name required></label><label>CNPJ<input name=cnpj></label><button class=primary>Adicionar</button></form><ul>${CO.map(c=>`<li>${esc(c.name)} · ${esc(c.cnpj)}</li>`).join('')}</ul>`)+
   panel('Usuários','',`<form class=filters style="border:0;padding:0" onsubmit="return addUser(event)"><label>Nome<input name=name required></label><label>E-mail<input name=email required></label>
   <label>Senha (12+)<input name=password type=password minlength=12 required></label><label>Perfil<select name=role>${Object.entries(RL).map(([k,v])=>`<option value=${k}>${v}</option>`).join('')}</select></label><button class=primary>Criar</button></form>
