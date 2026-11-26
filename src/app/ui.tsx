@@ -57,10 +57,10 @@ export function HBars({ list, color = "var(--brand-claro)" }: { list: Rank[]; co
   const mx = Math.max(...list.map((x) => x.cents), 1);
   return (
     <>
-      {list.map((x) => (
+      {list.map((x, i) => (
         <div className="bar" key={x.name}>
           <span className="nm" title={x.name}>{x.name}</span>
-          <span className="tr"><span className="fl" style={{ display: "block", width: `${(x.cents / mx) * 100}%`, background: color }} /></span>
+          <span className="tr"><span className="fl" style={{ display: "block", width: `${(x.cents / mx) * 100}%`, background: color, ["--i" as string]: i }} /></span>
           <span className="v">{brlk(x.cents)}</span>
         </div>
       ))}
@@ -88,8 +88,8 @@ export function BarChart({ m }: { m: DashboardDTO["monthly"] }) {
         const a = (x.scheduled_cents / mx) * H, b = (x.paid_cents / mx) * H, X = 64 + i * bw, lab = MN[+x.month.slice(5) - 1];
         return (
           <g key={x.month}>
-            <rect x={X} y={160 - a} width={bw / 2 - 4} height={a} rx="3" style={{ fill: "var(--brand-claro)" }}><title>{`Agendado ${lab}: ${brl(x.scheduled_cents)}`}</title></rect>
-            <rect x={X + bw / 2 - 2} y={160 - b} width={bw / 2 - 4} height={b} rx="3" style={{ fill: "var(--ok)" }}><title>{`Pago ${lab}: ${brl(x.paid_cents)}`}</title></rect>
+            <rect x={X} y={160 - a} width={bw / 2 - 4} height={a} rx="3" className="bar-rect" style={{ fill: "var(--brand-claro)", ["--i" as string]: i }}><title>{`Agendado ${lab}: ${brl(x.scheduled_cents)}`}</title></rect>
+            <rect x={X + bw / 2 - 2} y={160 - b} width={bw / 2 - 4} height={b} rx="3" className="bar-rect" style={{ fill: "var(--ok)", ["--i" as string]: i }}><title>{`Pago ${lab}: ${brl(x.paid_cents)}`}</title></rect>
             <text x={X + bw / 2 - 2} y="178" textAnchor="middle" fontSize="11" style={{ fill: "var(--ink-3)" }}>{lab}</text>
           </g>
         );
@@ -105,7 +105,7 @@ export function Donut({ items }: { items: DashboardDTO["by_status"] }) {
   const g = items.filter((x) => x.cents).map((x) => { const a = (acc / tot) * 100; acc += x.cents; return `${STATUS_VAR[x.status]} ${a}% ${(acc / tot) * 100}%`; }).join(",");
   return (
     <div className="donutrow">
-      <div style={{ width: 130, height: 130, borderRadius: "50%", background: `conic-gradient(${g})`, display: "grid", placeItems: "center" }}>
+      <div className="donut-ring" style={{ width: 130, height: 130, borderRadius: "50%", background: `conic-gradient(${g})`, display: "grid", placeItems: "center" }}>
         <div style={{ width: 84, height: 84, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center", textAlign: "center", fontSize: 11, color: "var(--ink-3)" }}>
           <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{items.reduce((s, x) => s + x.count, 0)}</b><br />agend.</div>
         </div>
@@ -125,7 +125,7 @@ export function WeekChart({ w }: { w: DashboardDTO["weeks"] }) {
     <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 130 }}>
       {w.map((x, i) => (
         <div key={x.from} style={{ flex: 1, textAlign: "center", fontSize: 10, color: "var(--ink-3)" }}>
-          <div title={brl(x.cents)} style={{ height: Math.max((x.cents / mx) * 100, 2), background: i ? "var(--line-2)" : "var(--brand)", borderRadius: "4px 4px 0 0" }} />
+          <div className="wk" title={brl(x.cents)} style={{ ["--i" as string]: i, height: Math.max((x.cents / mx) * 100, 2), background: i ? "var(--line-2)" : "var(--brand)", borderRadius: "4px 4px 0 0" }} />
           {dd(x.from).slice(0, 5)}<br /><b style={{ color: "var(--ink)" }}>{brlk(x.cents)}</b>
         </div>
       ))}

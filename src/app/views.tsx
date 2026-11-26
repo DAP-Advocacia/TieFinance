@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AuditDTO, CompanyDTO, DashboardDTO, PayeeDTO, PaymentDTO, ReconcileLine, Role, UserDTO } from "@/lib/types";
 import { RL, ST, api, brl, dd, dt, download, J, todayLocal } from "./client";
+import { Select } from "./select";
 import { AgingChart, BarChart, Donut, HBars, Metric, Metrics, Modal, Panel, PaymentsTable, WeekChart, useToast, type RowActions } from "./ui";
 
 export type Me = { id: string; name: string; email: string; role: Role };
@@ -53,8 +54,8 @@ export function PaymentFormModal({ c, editId, open, onClose, onSaved }: { c: Ctx
       {p?.reason && <div className="notice">Rejeitado: {p.reason}. Ao salvar, volta para aprovação.</div>}
       <form onSubmit={save}>
         <div className="fg">
-          <label>CNPJ pagador<select name="company_id" required defaultValue={p?.company_id}>{active(c.companies, p?.company_id).map((x) => <option key={x.id} value={x.id}>{x.name}{x.cnpj ? " · " + x.cnpj : ""}</option>)}</select></label>
-          <label>Favorecido<select name="payee_id" required defaultValue={p?.payee_id}>{active(c.payees, p?.payee_id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label>CNPJ pagador<Select name="company_id" defaultValue={p?.company_id}>{active(c.companies, p?.company_id).map((x) => <option key={x.id} value={x.id}>{x.name}{x.cnpj ? " · " + x.cnpj : ""}</option>)}</Select></label>
+          <label>Favorecido<Select name="payee_id" defaultValue={p?.payee_id}>{active(c.payees, p?.payee_id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
           <label>Valor (R$)<input name="amount" required placeholder="1500.00" defaultValue={p ? (p.amount_cents / 100).toFixed(2) : ""} /></label>
           <label>Data do pagamento<input type="date" name="pay_date" required defaultValue={p?.pay_date} /></label>
           <label className="wide">Descrição<input name="description" required maxLength={300} defaultValue={p?.description} /></label>
@@ -87,7 +88,7 @@ export function Dashboard({ c, tick, onBadge }: { c: Ctx; tick: number; onBadge:
   return (
     <>
       <div className="filters">
-        <label>CNPJ pagador<select value={co} onChange={(e) => setCo(e.target.value)}><option value="">Todos os CNPJs</option>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label>CNPJ pagador<Select value={co} onChange={setCo}><option value="">Todos os CNPJs</option>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
       </div>
       <Metrics>
         <Metric label="Aguardando aprovação" value={brl(k.pending.cents)} sub={`${k.pending.count} agendamento(s)`} tone="amber" onClick={() => c.go(can(c.me, "aprovador", "admin") ? "pend" : "pay")} />
@@ -140,12 +141,13 @@ export function PaymentsView({ c, tick }: { c: Ctx; tick: number }) {
   useEffect(load, [load]);
   const a = useRowActions(c, load, (id) => setEdit(id));
   const sum = (fn: (p: PaymentDTO) => boolean) => list.filter(fn).reduce((s, p) => s + p.amount_cents, 0);
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  const setS = (k: string) => (v: string) => setF({ ...f, [k]: v });
   return (
     <>
       <div className="filters">
-        <label>Situação<select value={f.status} onChange={set("status")}><option value="">Todas</option>{Object.entries(ST).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-        <label>CNPJ pagador<select value={f.company_id} onChange={set("company_id")}><option value="">Todos</option>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label>Situação<Select value={f.status} onChange={setS("status")}><option value="">Todas</option>{Object.entries(ST).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></label>
+        <label>CNPJ pagador<Select value={f.company_id} onChange={setS("company_id")}><option value="">Todos</option>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
         <label>De<input type="date" value={f.date_from} onChange={set("date_from")} /></label>
         <label>Até<input type="date" value={f.date_to} onChange={set("date_to")} /></label>
         <label>Busca<input value={f.q} onChange={set("q")} placeholder="favorecido ou descrição" /></label>
@@ -333,7 +335,7 @@ export function AdminView({ c }: { c: Ctx }) {
         <form className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }} onSubmit={submit("/users")}>
           <label>Nome<input name="name" required /></label><label>E-mail<input name="email" type="email" required /></label>
           <label>Senha (12+)<input name="password" type="password" minLength={12} required /></label>
-          <label>Perfil<select name="role" defaultValue="financeiro">{Object.entries(RL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label>Perfil<Select name="role" defaultValue="financeiro">{Object.entries(RL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></label>
           <button className="primary">Criar</button>
         </form>
         <div className="tw"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th></th></tr></thead>
@@ -343,9 +345,9 @@ export function AdminView({ c }: { c: Ctx }) {
                 <td>{x.name}</td><td>{x.email}</td>
                 <td>
                   {x.id === c.me.id ? RL[x.role] : (
-                    <select value={x.role} onChange={(e) => { if (confirm("Alterar o perfil? O usuário precisará entrar novamente.")) act(() => J(`/users/${x.id}/role`, { method: "POST", json: { role: e.target.value } }), "Perfil alterado"); else load(); }}>
+                    <Select value={x.role} onChange={(v) => { if (confirm("Alterar o perfil? O usuário precisará entrar novamente.")) act(() => J(`/users/${x.id}/role`, { method: "POST", json: { role: v } }), "Perfil alterado"); }}>
                       {Object.entries(RL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   )}
                   {!x.active && <> <span className="pill bad">inativo</span></>}
                 </td>

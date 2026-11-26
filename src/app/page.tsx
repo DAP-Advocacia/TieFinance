@@ -1,7 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompanyDTO, PayeeDTO } from "@/lib/types";
 import { RL, api, J } from "./client";
+import { Backdrop, Wordmark, useParallax } from "./login-fx";
+import { useReveal } from "./reveal";
 import { Symbol } from "./symbol";
 import { ToastProvider, useToast } from "./ui";
 import { AdminView, AuditView, Dashboard, PayeesView, PaymentFormModal, PaymentsView, PendingView, ReconcileView, type Ctx, type Me } from "./views";
@@ -36,6 +38,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
   const toast = useToast();
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  useParallax(panel);
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -45,15 +49,16 @@ function Login({ onLogin }: { onLogin: () => void }) {
   };
   return (
     <main id="login">
-      <section className="brand-panel" aria-label="TieFinance">
+      <section className="brand-panel" aria-label="TieFinance" ref={panel}>
+        <Backdrop />
         <span className="brand-label">Gestão financeira empresarial</span>
         <div className="brand-content">
-          <div className="monogram"><Symbol /></div>
-          <div className="reveal">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="wordmark" src="/assets/wordmark-branco.svg" alt="TieFinance" />
-            <p className="tagline">Financial ERP &amp; SaaS Platform</p>
+          <div className="monogram">
+            <Symbol />
+            <i className="spark s1" /><i className="spark s2" /><i className="spark s3" />
           </div>
+          <Wordmark />
+          <p className="tagline tag-in">Financial ERP &amp; SaaS Platform</p>
         </div>
         <span className="holding">Uma solução TechTie</span>
       </section>
@@ -85,6 +90,8 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [companies, setCompanies] = useState<CompanyDTO[]>([]);
   const [payees, setPayees] = useState<PayeeDTO[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  useReveal(mainRef);
   const reloadRefs = useCallback(async () => {
     const [c, p] = await Promise.all([J<CompanyDTO[]>("/companies"), J<PayeeDTO[]>("/payees")]);
     setCompanies(c); setPayees(p);
@@ -128,10 +135,12 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <div><b style={{ fontSize: 12 }}>{me.name}</b><div className="small">{RL[me.role]}</div></div>
           </div>
         </header>
-        <main className="content">
+        <main className="content" ref={mainRef}>
+          <div key={tab} className="page">
           <div className="crumb">TieFinance / {h}</div>
           <div className="pagehead"><div><h1>{h}</h1><p>{s}</p></div><div className="actions">{canNew && <button className="primary" onClick={() => setNewOpen(true)}>+ Novo agendamento</button>}</div></div>
           {view}
+          </div>
         </main>
       </div>
       <PaymentFormModal c={c} editId={null} open={newOpen} onClose={() => setNewOpen(false)} onSaved={refresh} />

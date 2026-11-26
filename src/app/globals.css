@@ -1,11 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root{--brand:#08245d;--brand-claro:#0e3b8a;--brand-soft:#eef3fb;--ouro:#d4af37;--ouro-claro:#f4d068;--ouro-escuro:#7d6210;--ouro-suave:#fbf5e1;
 --bg:#f5f7fb;--surface:#ffffff;--line:#e3e8f1;--line-2:#cfd8e6;--ink:#0f1c30;--ink-2:#475569;--ink-3:#64748b;
 --ok:#0b7646;--ok-bg:#e7f8ef;--warn:#8a6100;--warn-bg:#fff6dc;--err:#b42320;--err-bg:#fdecec;
 --r:10px;--sh:0 1px 2px rgba(8,36,93,.04),0 2px 6px rgba(8,36,93,.04);--ring:0 0 0 3px rgba(14,59,138,.15)}
 *{box-sizing:border-box}
-body{margin:0;color:var(--ink);font:14px/1.5 'Plus Jakarta Sans','Segoe UI','Inter',sans-serif;font-weight:400;background:var(--bg)}
+body{margin:0;color:var(--ink);font:14px/1.5 var(--font-jakarta),'Plus Jakarta Sans','Segoe UI','Inter',sans-serif;font-weight:400;background:var(--bg)}
 button,select,input,textarea{font:inherit}button{cursor:pointer;border:0}
 button:focus-visible{outline:none;box-shadow:var(--ring)}
 aside{position:fixed;inset:0 auto 0 0;width:240px;background:var(--brand);color:var(--line);padding:24px 12px;overflow:auto;z-index:10}
@@ -70,8 +69,8 @@ dialog::backdrop{background:rgba(8,36,93,.45)}dialog h2{margin:0 0 12px;font-wei
 .wordmark{width:86%;height:auto;display:block;margin:0 auto}
 .tagline{letter-spacing:.2em;font-size:10px;font-weight:500;margin:12px 0;color:var(--line)}
 .tagline:before,.tagline:after{content:'';display:inline-block;vertical-align:middle;width:22px;height:1px;background:var(--ouro);margin:0 8px}
-.brand-label{font-size:11px;color:var(--line-2);letter-spacing:.15em;text-transform:uppercase;position:absolute;top:28px;left:32px}
-.holding{position:absolute;bottom:28px;left:32px;font-size:11px;color:var(--line-2)}
+.brand-label{z-index:1;font-size:11px;color:var(--line-2);letter-spacing:.15em;text-transform:uppercase;position:absolute;top:28px;left:32px}
+.holding{z-index:1;position:absolute;bottom:28px;left:32px;font-size:11px;color:var(--line-2)}
 .reveal{animation:tf-reveal .55s ease 1.1s both}@keyframes tf-reveal{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .right{display:grid;place-items:center;padding:48px 32px}.box{width:min(100%,392px)}
 .eyebrow-l{color:var(--brand);text-transform:uppercase;letter-spacing:.15em;font-size:11px;font-weight:700;margin:0 0 16px;display:flex;align-items:center;gap:8px}
@@ -91,3 +90,117 @@ header{padding:0 16px;height:60px}.content{padding:16px 12px}.metric strong{font
 
 /* animacao do simbolo */
 .tf-stem,.tf-wing,.tf-fold{transform-box:fill-box;transform-origin:center;animation:tf-slide 980ms cubic-bezier(.22,.8,.25,1) both}.tf-stem{--x:0px;--y:72px;--sx:0px;--sy:-3px;animation-delay:60ms}.tf-wing{--x:-85px;--y:0px;--sx:3px;--sy:0px;animation-delay:140ms}.tf-fold{--x:80px;--y:-45px;--sx:-2px;--sy:1px;animation-delay:240ms}@keyframes tf-slide{0%{transform:translate(var(--x),var(--y))}85%{transform:translate(var(--sx),var(--sy))}100%{transform:translate(0,0)}}@media(prefers-reduced-motion:reduce){.tf-stem,.tf-wing,.tf-fold{animation:none!important;transform:none}}
+
+/* ============ MOVIMENTO ============ */
+html{scroll-behavior:smooth}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes spinR{to{rotate:360deg}}
+
+/* ---- login: fundo animado ---- */
+#login{animation:fadeIn .6s ease both}
+.brand-panel{background:radial-gradient(120% 90% at 85% 0%,var(--brand-claro) 0%,var(--brand) 48%,color-mix(in srgb,var(--brand) 55%,var(--ink)) 100%)}
+.fx{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.fx-orb{position:absolute;border-radius:50%;filter:blur(70px);will-change:transform}
+.fx-orb.o1{width:54vmin;height:54vmin;left:-14%;top:-16%;opacity:.55;background:radial-gradient(circle,color-mix(in srgb,var(--brand-claro) 70%,var(--surface)) 0%,transparent 68%);animation:orb1 19s ease-in-out infinite alternate}
+.fx-orb.o2{width:50vmin;height:50vmin;right:-12%;bottom:-14%;opacity:.5;background:radial-gradient(circle,color-mix(in srgb,var(--ouro) 55%,transparent) 0%,transparent 68%);animation:orb2 23s ease-in-out infinite alternate}
+.fx-orb.o3{width:36vmin;height:36vmin;left:38%;top:34%;opacity:.35;background:radial-gradient(circle,color-mix(in srgb,var(--brand-claro) 60%,var(--surface)) 0%,transparent 70%);animation:orb3 16s ease-in-out infinite alternate}
+@keyframes orb1{to{transform:translate(18vmin,14vmin) scale(1.2)}}
+@keyframes orb2{to{transform:translate(-16vmin,-12vmin) scale(1.15)}}
+@keyframes orb3{to{transform:translate(-12vmin,10vmin) scale(.85)}}
+.fx-ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.07);aspect-ratio:1}
+.fx-ring.r1{width:min(130vmin,860px);right:-34%;bottom:-40%;border-top-color:color-mix(in srgb,var(--ouro) 55%,transparent);animation:spinR 70s linear infinite}
+.fx-ring.r2{width:min(165vmin,1040px);right:-44%;bottom:-52%;border-right-color:color-mix(in srgb,var(--ouro-claro) 38%,transparent);animation:spinR 120s linear infinite reverse}
+.fx-ring.r3{width:min(78vmin,560px);left:50%;top:42%;translate:-50% -50%;border-style:dashed;border-color:rgba(255,255,255,.06);animation:spinR2 90s linear infinite}
+@keyframes spinR2{from{rotate:0deg}to{rotate:360deg}}
+.fx-beam{position:absolute;top:-30%;left:-45%;width:48%;height:165%;rotate:18deg;background:linear-gradient(100deg,transparent 0%,color-mix(in srgb,var(--ouro-claro) 9%,transparent) 42%,rgba(255,255,255,.08) 50%,transparent 100%);animation:beam 12s ease-in-out 1.5s infinite}
+@keyframes beam{0%{translate:0 0;opacity:0}12%{opacity:1}60%{translate:330% 0;opacity:1}100%{translate:330% 0;opacity:0}}
+.fx-dust{position:absolute;inset:0;width:100%;height:100%}
+
+/* ---- login: símbolo ---- */
+.monogram{position:relative;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--ouro-claro) 30%,transparent));animation:glow 5.5s ease-in-out 2.2s infinite;translate:calc(var(--mx,0)*14px) calc(var(--my,0)*10px);transition:translate .4s ease-out}
+.monogram svg{overflow:visible;animation:float 8s ease-in-out 2.4s infinite}
+@keyframes glow{50%{filter:drop-shadow(0 0 44px color-mix(in srgb,var(--ouro-claro) 55%,transparent))}}
+@keyframes float{50%{transform:translateY(-9px)}}
+.tf-halo{opacity:0;animation:haloIn 1.8s ease 1.1s forwards,haloPulse 5.5s ease-in-out 3s infinite}
+@keyframes haloIn{to{opacity:1}}
+@keyframes haloPulse{50%{opacity:.5}}
+.tf-sweep{transform:translateX(-220px) skewX(-18deg);animation:tfSweep 6.8s ease-in-out 1.9s infinite}
+@keyframes tfSweep{0%{transform:translateX(-220px) skewX(-18deg)}24%{transform:translateX(520px) skewX(-18deg)}100%{transform:translateX(520px) skewX(-18deg)}}
+.spark{position:absolute;width:15px;height:15px;translate:-50% -50%;background:var(--ouro-claro);clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);opacity:0;animation:twinkle 4.8s ease-in-out infinite;pointer-events:none}
+.spark.s1{left:79%;top:18%;animation-delay:2.3s}
+.spark.s2{left:21%;top:34%;width:10px;height:10px;animation-delay:3.6s}
+.spark.s3{left:46%;top:71%;width:9px;height:9px;animation-delay:4.6s}
+@keyframes twinkle{0%,100%{opacity:0;scale:.2;rotate:0deg}16%{opacity:1;scale:1.2}34%{opacity:0;scale:.3;rotate:90deg}}
+
+/* ---- login: nome da marca (texto vetorial) ---- */
+.wordmark-text{position:relative;display:inline-block;font-size:clamp(42px,7.4vw,68px);font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--surface);white-space:nowrap;margin-top:6px}
+.wm-base span,.wm-shine span{display:inline-block}
+.wm-base span{opacity:0;animation:letterIn .85s cubic-bezier(.2,.8,.2,1) calc(1s + var(--i,0)*75ms) both}
+@keyframes letterIn{from{opacity:0;transform:translateY(.45em);filter:blur(9px)}to{opacity:1;transform:none;filter:blur(0)}}
+.wm-shine{position:absolute;inset:0;background:linear-gradient(105deg,transparent 34%,var(--ouro-claro) 47%,var(--surface) 52%,transparent 66%);background-size:280% 100%;background-position:135% 0;-webkit-background-clip:text;background-clip:text;color:transparent;animation:wmShine 7s ease-in-out 2.7s infinite}
+@keyframes wmShine{0%{background-position:135% 0}28%,100%{background-position:-35% 0}}
+.tag-in{animation:tf-reveal .8s ease 2.1s both}
+
+/* ---- login: formulário ---- */
+.box>*{animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+.box>:nth-child(1){animation-delay:.2s}.box>:nth-child(2){animation-delay:.28s}.box>:nth-child(3){animation-delay:.36s}
+.box>:nth-child(4){animation-delay:.46s}.box>:nth-child(5){animation-delay:.56s}.box>:nth-child(6){animation-delay:.64s}
+
+/* ---- dentro da plataforma ---- */
+.page{animation:pageIn .42s cubic-bezier(.2,.8,.2,1) backwards}
+.page :is(.metric,.panel,.filters,.notice):not([data-rv]):not(:is(.metric,.panel) *){opacity:0}
+[data-rv="0"]{opacity:0;transform:translateY(18px)}
+[data-rv="1"]{opacity:1;transform:none;transition:opacity .6s ease var(--d,0ms),transform .75s cubic-bezier(.2,.8,.2,1) var(--d,0ms),background .2s,border-color .2s,box-shadow .2s}
+.primary,.secondary,.danger,.ok{transition:background .18s,box-shadow .18s,transform .12s,filter .18s,border-color .18s}
+.primary:active,.secondary:active,.danger:active,.ok:active{transform:scale(.97)}
+.primary:hover{box-shadow:0 4px 14px rgba(8,36,93,.22)}
+.nav{transition:background .22s,color .22s,box-shadow .22s}
+.metric,.panel{transition:border-color .2s,box-shadow .2s,background .2s}
+.metric:hover{border-color:var(--line-2)}
+table tr td{transition:background .15s}
+.pill{transition:background .2s,color .2s}
+#msg{animation:toastIn .35s cubic-bezier(.2,.8,.2,1)}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+dialog[open]{animation:dlgIn .3s cubic-bezier(.2,.8,.2,1)}
+dialog[open]::backdrop{animation:fadeIn .25s ease}
+@keyframes dlgIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+.mobile-menu{transition:background .2s}
+aside{transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+.overlay{animation:fadeIn .25s ease}
+
+/* ---- gráficos animados (só depois que o painel é revelado) ---- */
+@keyframes growY{from{transform:scaleY(0)}}
+@keyframes growX{from{transform:scaleX(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.7) rotate(-60deg)}}
+[data-rv="1"] .bar-rect{transform-box:fill-box;transform-origin:50% 100%;animation:growY .9s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*60ms + 250ms)}
+[data-rv="1"] .bar .fl{transform-origin:left center;animation:growX .95s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*80ms + 250ms)}
+[data-rv="1"] .wk{transform-origin:bottom;animation:growY .9s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*70ms + 250ms)}
+[data-rv="1"] .donut-ring{animation:popIn 1s cubic-bezier(.2,.8,.2,1) .25s both}
+
+/* ---- listas suspensas ---- */
+.sel{position:relative;display:inline-block;min-width:170px}
+.fg .sel,.sel.block{display:block;width:100%}
+.sel-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:var(--r);padding:8px 12px;font-size:14px;line-height:1.5;transition:border-color .15s,box-shadow .15s,background .15s}
+.sel-btn:hover{background:var(--brand-soft)}
+.sel-btn:focus-visible,.sel-btn.open{outline:none;border-color:var(--brand-claro);box-shadow:var(--ring)}
+.sel-btn:disabled{opacity:.55;cursor:not-allowed}
+.sel-val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sel-chev{width:16px;height:16px;flex:none;fill:none;stroke:var(--ink-3);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.sel-btn.open .sel-chev{transform:rotate(180deg)}
+.sel-pop{position:fixed;z-index:200;margin:0;padding:6px;list-style:none;overflow:auto;scrollbar-width:thin;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 12px 32px rgba(8,36,93,.14),0 2px 6px rgba(8,36,93,.06);animation:selIn .17s cubic-bezier(.2,.8,.2,1)}
+@keyframes selIn{from{opacity:0;translate:0 -6px;scale:.98}}
+.sel-pop.up{animation-name:selInUp}
+@keyframes selInUp{from{opacity:0;translate:0 6px;scale:.98}}
+.sel-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);transition:background .12s}
+.sel-opt.act{background:var(--brand-soft)}
+.sel-opt.on{font-weight:700;color:var(--brand)}
+.sel-opt svg{width:16px;height:16px;flex:none;fill:none;stroke:var(--brand-claro);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .page :is(.metric,.panel,.filters,.notice){opacity:1!important}
+  [data-rv]{opacity:1!important;transform:none!important}
+  .wm-base span{opacity:1}
+}
