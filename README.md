@@ -54,6 +54,9 @@ O admin inicial é criado no **primeiro login** com `ERP_ADMIN_EMAIL`, se a tabe
 - RLS ligado **sem policies** em todas as tabelas: a API REST pública do Supabase não enxerga nada; só o app acessa, direto pelo Postgres.
 - Anexos ficam na tabela `attachments` (limite de 4 MB por arquivo, por causa do limite de corpo da Vercel).
 
+## Dados fictícios
+`tools/seed-demo.sql` popula o dashboard (tudo marcado `[DEMO]`, com instruções de remoção no fim do arquivo).
+
 ## Testes
 
 Teste de ponta a ponta da API contra um servidor rodando em um **banco/schema vazio**:

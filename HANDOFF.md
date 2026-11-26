@@ -1,6 +1,6 @@
 # HANDOFF — TieFinance
 
-Atualizado em 2026-11-26. Estado: **reescrita em Next.js concluída e testada em Postgres real; ainda não publicada na Vercel.** Não usar com dados reais antes de fechar os itens de "Antes de dados reais".
+Atualizado em 2026-11-26. Estado: **em produção na Vercel** (https://tie-finance.vercel.app, região `gru1`) com banco no Supabase (sa-east-1). A versão FastAPI/Sprite foi desligada. Há dados fictícios `[DEMO]` carregados; não usar com dados reais antes de fechar os itens de "Antes de dados reais".
 
 ## 1. Contexto
 Base: documentação ERP Finance v0.2 do Thyago (auditoria) em `docs/`. O PVP foi construído a partir dela, reduzido ao essencial:
@@ -10,7 +10,7 @@ Base: documentação ERP Finance v0.2 do Thyago (auditoria) em `docs/`. O PVP fo
 - Baixa: manual (Mariana) ou por upload de extrato (Thyago).
 - Notificação ao presidente: **em standby** por decisão do usuário.
 
-Histórico: v1 em FastAPI (branch `main`, hoje em `legacy-python/`), rodando no Fly.io Sprites; reescrita em Next.js nesta branch para hospedar na Vercel, perto do banco (São Paulo) e eliminar a latência (o Sprite fica em Chicago).
+Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e foi **desligada** (sprite destruído em 2026-11-26). A reescrita em Next.js foi para a Vercel, perto do banco (São Paulo), eliminando a latência (o Sprite ficava em Chicago: ~500 ms por requisição contra ~40 ms agora).
 
 ## 2. Arquitetura
 - **Next.js 16 (App Router) + React 19 + TypeScript.** Telas em `src/app/` (client components); API em `src/app/api/**/route.ts` (route handlers).
@@ -32,23 +32,19 @@ Histórico: v1 em FastAPI (branch `main`, hoje em `legacy-python/`), rodando no 
 
 ## 3. Banco (Supabase)
 - Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, região sa-east-1). Tabelas no schema `public` com RLS ligado e sem policies; migrações 0001–0003 aplicadas.
-- Conteúdo atual: 1 usuário (admin `admin@dap.local`, criado pela v1) e nada mais.
-- Schemas `tf_test` e `tf_ts` foram criados **só para testes** (dados fictícios) e **ainda existem**; podem ser apagados: `DROP SCHEMA tf_test CASCADE; DROP SCHEMA tf_ts CASCADE;`.
+- Conteúdo atual: o admin `admin@dap.local`, um usuário `thyago@demo.local` (admin, criado manualmente) e os **dados fictícios** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs, 10 favorecidos e os usuários `demo-mariana@demo.local` e `demo-bruno@demo.local`). Para remover os dados demo, rode os `DELETE` comentados no fim de `tools/seed-demo.sql`.
+- Os schemas de teste `tf_test` e `tf_ts` já foram apagados.
 - O backup real é o do Supabase (a exportação do app é apenas para consulta).
 
-## 4. Deploy na Vercel (passo a passo — ação do usuário)
-1. Em vercel.com → *Add New → Project* → importar `DAP-Advocacia/TieFinance`; escolher a branch **`nextjs`** (ou fazer o merge na `main` depois de validar).
-2. Framework: Next.js (detectado). `vercel.json` já fixa a região `gru1` (São Paulo).
-3. *Environment Variables* (Production):
-   - `DATABASE_URL` = string do **Transaction pooler** do Supabase (Connect → Transaction pooler, porta **6543**), no formato `postgresql://postgres.tcmiwjijrovoyspiurup:SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`.
-   - `ERP_ADMIN_EMAIL` e `ERP_ADMIN_PASSWORD` (12+ caracteres) — só valem se a tabela `users` estiver vazia.
-4. *Deploy*. Depois: login com o admin, **trocar a senha**, cadastrar CNPJs, favorecidos e os usuários reais.
-5. Validar a latência. Se estiver boa, desligar o Sprite (`sprite destroy -s rp-financeiro`, só com decisão do usuário).
-
-Atenção: o plano Hobby da Vercel limita funções a 10 s e corpo a 4,5 MB. As operações do app cabem nisso; se o dashboard ficar lento com muitos dados, mover agregações para SQL.
+## 4. Deploy (Vercel)
+- Projeto `tie-finance` importado de `DAP-Advocacia/TieFinance`, branch `main` (produção). `vercel.json` fixa `gru1`.
+- Variáveis (Production): `DATABASE_URL` (Transaction pooler do Supabase, porta 6543), `ERP_ADMIN_EMAIL`, `ERP_ADMIN_PASSWORD`.
+- Cada push na `main` gera um novo deploy. Rollback: *Deployments → Promote* de um deploy anterior, ou reverter o commit.
+- Limites do plano Hobby: funções 10 s, corpo 4,5 MB (anexo limitado a 4 MB). Se o dashboard ficar lento com muitos dados, mover agregações para SQL.
+- Medido em 2026-11-26: respostas leves 30–60 ms; login (toca o banco) 90–190 ms.
 
 ## 5. Pendências
-**Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP); HTTPS (a Vercel já fornece); trocar a senha do admin (a inicial circulou em chat); conferir backup/PITR do plano do Supabase; apagar os schemas de teste.
+**Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP); trocar a senha do admin se ainda não foi trocada (a inicial circulou em chat); conferir backup/PITR do plano do Supabase; remover os dados demo e desativar os usuários `*@demo.local`.
 1. Extrato **real** do banco do Thyago para ajustar o leitor (hoje espera Data/Descrição/Valor; OFX não suportado).
 2. Validação visual em navegador: as telas foram verificadas por build, tipos e testes de API, **não** por teste de interface. Conferir o login animado, dashboard, formulários e o layout mobile.
 3. MFA e recuperação de senha por e-mail.
@@ -62,4 +58,4 @@ Atenção: o plano Hobby da Vercel limita funções a 10 s e corpo a 4,5 MB. As 
 - Nunca commitar `.env*`, senhas ou strings de conexão. `.env.example` só tem placeholders.
 - `tests/run.mjs` escreve dados fictícios: rode **apenas** em banco/schema vazio de teste (`DB_SCHEMA`), nunca no `public` de produção.
 - Edições de CSS: usar tokens (`var(--brand)` etc.); não introduzir hex solto.
-- Rollback: a v1 Python continua em `legacy-python/` e no Sprite (`rp-financeiro`, checkpoints `sprite checkpoint list`).
+- Rollback: o código da v1 Python segue em `legacy-python/` (o Sprite e seus checkpoints não existem mais).
