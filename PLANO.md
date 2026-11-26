@@ -6,7 +6,7 @@ Aprovado pelo usuário em 2026-11-26. Base: menu planejado pelo Thyago (auditori
 | Módulo | Situação |
 |---|---|
 | Dashboard Executivo | Parcial: indicadores de pagamentos. Faltam receitas, saldos, inadimplência, EBITDA |
-| Contas a Receber | **Feito no código** (clientes, recebíveis, recorrência, baixa manual, aging, CSV). Falta: baixa por extrato (entradas), juros/multa, edição, importação Bitrix/Asaas; migração 0005 ainda não aplicada em produção |
+| Contas a Receber | **Feito no código** (clientes, recebíveis, recorrência, baixa manual, aging, CSV). Baixa por extrato (entradas) feita. Falta: juros/multa, edição, importação Bitrix/Asaas; migração 0005 aplicada |
 | Contas a Pagar | **Feito** (falta alçada por valor) |
 | Tesouraria | Não iniciado |
 | Conciliação Bancária | Parcial: extrato por conta (Santander/Bradesco/Nubank). Faltam integrações Asaas, Luna Pay, EFI |

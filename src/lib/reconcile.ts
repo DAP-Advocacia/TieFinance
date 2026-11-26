@@ -5,6 +5,7 @@ import { getDb, schema } from "@/db";
 import { HttpError, MAX_UPLOAD, diffDays, nowUtc, parseDate, toIso } from "./core";
 import { log } from "./audit";
 import { getPayment, listPayments, markPaid } from "./payments";
+import { getReceivable, listReceivables, markReceived } from "./receivables";
 import type { SessionUser } from "./auth";
 import type { PaymentDTO, ReconcileLine } from "./types";
 
@@ -79,7 +80,7 @@ export function parseStmtDate(v: unknown): string {
 
 const DATE_COLS = new Set(["data", "date", "data pagamento", "data lancamento", "dt"]);
 const AMOUNT_COLS = new Set(["valor", "amount", "valor (r$)", "valor r$", "debito"]);
-const DESC_COLS = new Set(["descricao", "historico", "favorecido", "beneficiario", "memo", "lancamento", "complemento", "nome"]);
+const DESC_COLS = new Set(["descricao", "historico", "favorecido", "beneficiario", "memo", "lancamento", "complemento", "nome", "tipo", "protocolo"]);
 
 type StmtLine = { line: number; description: string; date?: string; cents?: number; error?: string };
 
@@ -101,16 +102,22 @@ export async function readStatement(name: string, buf: Buffer): Promise<StmtLine
     rows = parseCsv(text, semis >= commas ? ";" : ",");
   }
   if (!rows.length) throw new HttpError(422, "Arquivo vazio");
-  const head = rows[0].map(norm);
+  // o cabecalho pode nao ser a 1a linha (ex.: Santander traz agencia/conta antes): usa a primeira, nas 25 primeiras, com data e valor
+  let hi = rows.slice(0, 25).findIndex((r) => {
+    const h = r.map(norm);
+    return h.some((x) => DATE_COLS.has(x)) && h.some((x) => AMOUNT_COLS.has(x));
+  });
+  if (hi < 0) hi = 0;
+  const head = rows[hi].map(norm);
   const di = head.findIndex((h) => DATE_COLS.has(h));
   const ai = head.findIndex((h) => AMOUNT_COLS.has(h));
   const ci = head.flatMap((h, i) => (DESC_COLS.has(h) ? [i] : []));
   if (di < 0 || ai < 0) throw new HttpError(422, "Cabecalho precisa ter colunas de data e valor (ex.: Data; Descricao; Valor)");
   const out: StmtLine[] = [];
-  rows.slice(1).forEach((r, idx) => {
+  rows.slice(hi + 1).forEach((r, idx) => {
     if (!r.length || r.every((c) => c === null || c === undefined || c === "")) return;
     const description = ci.map((i) => r[i]).filter((c) => c !== null && c !== undefined && c !== "").join(" ");
-    const item: StmtLine = { line: idx + 2, description };
+    const item: StmtLine = { line: hi + idx + 2, description };
     try {
       item.date = parseStmtDate(r[di]);
       item.cents = parseAmount(r[ai]);
@@ -151,8 +158,29 @@ export async function previewStatement(user: SessionUser, file: File, bankAccoun
   // so concilia com pagamentos agendados NESTA conta bancaria
   const approved = await listPayments(db, { status: "approved", bank_account_id: bankAccountId });
   const tol = TOLERANCE();
+  const openRecv = (await listReceivables(db, { status: "open" })).filter((r) => r.bank_account_id === bankAccountId);
+  const claimedR = new Map<string, number>();
   const claimed = new Map<string, number>();
+  const digits = (s: string) => s.replace(/\D/g, "");
   const result: ReconcileLine[] = [];
+
+  const pushRecv = (r2: { line: number; description: string; date?: string; amount_cents: number }, abs: number, desc: string, date: string) => {
+    const cands = openRecv.filter((r) => r.amount_cents === abs && !claimedR.has(r.id));
+    const d = digits(desc);
+    // CPF/CNPJ do cliente no historico: casa mesmo com atraso; entre varias parcelas, a mais antiga em aberto
+    const byDoc = cands.filter((r) => digits(r.customer_document).length >= 11 && d.includes(digits(r.customer_document))).sort((a, b) => a.due_date.localeCompare(b.due_date));
+    if (byDoc.length) {
+      claimedR.set(byDoc[0].id, r2.line);
+      result.push({ ...r2, result: "match", receivable: byDoc[0], note: byDoc.length > 1 ? "Parcela mais antiga em aberto do cliente" : undefined });
+      return;
+    }
+    const near = cands.filter((r) => Math.abs(diffDays(r.due_date, date)) <= tol);
+    if (near.length === 1) {
+      claimedR.set(near[0].id, r2.line);
+      result.push({ ...r2, result: "match", receivable: near[0], note: "Casado por valor e vencimento (sem documento no historico)" });
+    } else if (near.length > 1) result.push({ ...r2, result: "ambiguous", note: near.length + " recebiveis com o mesmo valor e vencimento proximo" });
+    else result.push({ ...r2, result: "unmatched", note: "Nenhum recebivel em aberto correspondente nesta conta" });
+  };
 
   for (const l of lines) {
     const row = { line: l.line, description: l.description };
@@ -162,8 +190,11 @@ export async function previewStatement(user: SessionUser, file: File, bankAccoun
     }
     const abs = Math.abs(l.cents!);
     const r2 = { ...row, date: l.date, amount_cents: abs };
-    if (hasDebits && l.cents! >= 0) {
-      result.push({ ...r2, result: "ignored", note: "Entrada/credito ignorado" });
+    const credit = l.cents! > 0;
+    const tryPay = !hasDebits || !credit; // arquivo so com positivos: tenta pagamento e, sem par, recebivel
+    const tryRecv = !hasDebits || credit;
+    if (!tryPay) {
+      pushRecv(r2, abs, l.description, l.date!);
       continue;
     }
     let cands: PaymentDTO[] = approved.filter((p) => p.amount_cents === abs && Math.abs(diffDays(p.pay_date, l.date!)) <= tol);
@@ -179,6 +210,8 @@ export async function previewStatement(user: SessionUser, file: File, bankAccoun
       result.push({ ...r2, result: "match", payment: cands[0] });
     } else if (cands.length >= 1) {
       result.push({ ...r2, result: "ambiguous", note: "Mais de um candidato ou ja usado em outra linha", candidates: cands });
+    } else if (tryRecv) {
+      pushRecv(r2, abs, l.description, l.date!);
     } else {
       result.push({ ...r2, result: "unmatched", note: "Nenhum agendamento aprovado correspondente nesta conta" });
     }
@@ -194,23 +227,33 @@ export async function previewStatement(user: SessionUser, file: File, bankAccoun
   };
 }
 
-export async function confirmReconcile(user: SessionUser, items: { payment_id: string; paid_date: string; ref: string }[], file: string, bankAccountId: string, fileHash: string, totalLines: number) {
+export type ConfirmItem = { payment_id?: string; receivable_id?: string; paid_date: string; ref: string };
+export async function confirmReconcile(user: SessionUser, items: ConfirmItem[], file: string, bankAccountId: string, fileHash: string, totalLines: number) {
   const account = await loadAccount(bankAccountId);
   const db = getDb();
   const paid: string[] = [];
   const errors: { id: string; error: string }[] = [];
   for (const it of items) {
+    const key = it.payment_id ?? it.receivable_id ?? "";
     try {
       await db.transaction(async (tx) => {
+        if (it.receivable_id) {
+          const r = await getReceivable(tx, it.receivable_id);
+          if (!r) throw new HttpError(404, "Recebivel nao encontrado");
+          if (r.bank_account_id !== bankAccountId) throw new HttpError(409, "Recebivel pertence a outra conta bancaria");
+          await markReceived(tx, user, it.receivable_id, parseDate(it.paid_date), "extrato", `${account.bank} ${file} ${it.ref}`.trim().slice(0, 300));
+          return;
+        }
+        if (!it.payment_id) throw new HttpError(422, "Item sem agendamento ou recebivel");
         const p = await getPayment(tx, it.payment_id);
         if (!p) throw new HttpError(404, "Agendamento nao encontrado");
         if (p.bank_account_id !== bankAccountId) throw new HttpError(409, "Agendamento pertence a outra conta bancaria");
         await markPaid(tx, user, it.payment_id, parseDate(it.paid_date), "extrato", `${account.bank} ${file} ${it.ref}`.trim().slice(0, 300));
       });
-      paid.push(it.payment_id);
+      paid.push(key);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;
-      errors.push({ id: it.payment_id, error: e.detail });
+      errors.push({ id: key, error: e.detail });
     }
   }
   if (paid.length) await db.insert(schema.statementImports).values({ bankAccountId, filename: file.slice(0, 200), fileHash, importedBy: user.id, importedAt: nowUtc(), lines: totalLines || items.length, paid: paid.length });

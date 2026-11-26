@@ -236,7 +236,7 @@ export function PayeesView({ c }: { c: Ctx }) {
 }
 
 /* ---------- conciliação ---------- */
-const RES: Record<string, [string, string]> = { match: ["Conciliado", "good"], ambiguous: ["Ambíguo", "warn"], unmatched: ["Sem agendamento", "bad"], error: ["Erro", "bad"], ignored: ["Ignorado", ""] };
+const RES: Record<string, [string, string]> = { match: ["Conciliado", "good"], ambiguous: ["Ambíguo", "warn"], unmatched: ["Sem par", "bad"], error: ["Erro", "bad"], ignored: ["Ignorado", ""] };
 export function ReconcileView({ c }: { c: Ctx }) {
   const toast = useToast();
   const accounts = c.banks.filter((b) => b.active);
@@ -253,17 +253,17 @@ export function ReconcileView({ c }: { c: Ctx }) {
   };
   const ok = async () => {
     if (!rc) return;
-    const items = rc.lines.filter((l) => l.result === "match").map((l) => ({ payment_id: l.payment!.id, paid_date: l.date!, ref: "linha " + l.line }));
-    if (!confirm(`Marcar ${items.length} agendamento(s) como pagos na conta ${rc.account.bank} · ${rc.account.nickname}?`)) return;
+    const items = rc.lines.filter((l) => l.result === "match").map((l) => ({ ...(l.payment ? { payment_id: l.payment.id } : { receivable_id: l.receivable!.id }), paid_date: l.date!, ref: "linha " + l.line }));
+    if (!confirm(`Baixar ${items.length} item(ns) (pagamentos e recebimentos) na conta ${rc.account.bank} · ${rc.account.nickname}?`)) return;
     try {
       const r = await J<{ paid: string[]; errors: unknown[] }>("/reconcile/confirm", { method: "POST", json: { items, file: rc.file, bank_account_id: rc.account.id, file_hash: rc.file_hash, total_lines: rc.total_lines } });
-      toast(`${r.paid.length} baixados` + (r.errors.length ? `, ${r.errors.length} erros` : "")); setRc(null); c.refresh();
+      toast(`${r.paid.length} baixado(s)` + (r.errors.length ? `, ${r.errors.length} erros` : "")); setRc(null); c.refresh();
     } catch (e) { toast((e as Error).message); }
   };
   const n = (k: string) => rc?.lines.filter((l) => l.result === k).length ?? 0;
   return (
     <Panel title="Enviar extrato" sub="CSV ou XLSX com colunas Data, Descrição e Valor (até 4 MB)">
-      <div className="notice">O extrato é cruzado apenas com agendamentos <b>aprovados nesta conta bancária</b>, por valor exato, data (±3 dias) e nome do favorecido. Nada é baixado até você confirmar.</div>
+      <div className="notice">Saídas são cruzadas com agendamentos <b>aprovados</b> e entradas com recebíveis <b>em aberto</b>, sempre desta conta bancária: valor exato e data (±3 dias), nome ou CPF/CNPJ. Nada é baixado até você confirmar.</div>
       {sel?.kind === "api" && <div className="notice">{sel.bank}: a integração automática está em desenvolvimento. Por enquanto, exporte o extrato no painel do {sel.bank} e envie aqui.</div>}
       {!accounts.length ? <p className="small">Nenhuma conta bancária cadastrada. Peça ao administrador para cadastrar em Administração → Contas bancárias.</p> : (
         <div className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }}>
@@ -280,19 +280,19 @@ export function ReconcileView({ c }: { c: Ctx }) {
               <Metric label="Linhas" value={rc.lines.length} sub={`${rc.account.bank} · ${rc.account.nickname}`} />
               <Metric label="Conciliáveis" value={n("match")} sub="prontos para baixa" tone="green" />
               <Metric label="Ambíguos / sem par" value={n("ambiguous") + n("unmatched")} sub="revisar manualmente" tone="amber" />
-              <Metric label="Ignorados / erro" value={n("ignored") + n("error")} sub="entradas ou linhas ilegíveis" />
+              <Metric label="Ignorados / erro" value={n("ignored") + n("error")} sub="linhas ilegíveis" />
             </Metrics>
           </div>
           {n("match") > 0 && <button className="ok" onClick={ok}>Confirmar baixa dos {n("match")} conciliados</button>}
           <div className="tw" style={{ marginTop: 12 }}>
             <table>
-              <thead><tr><th>Linha</th><th>Data</th><th>Descrição</th><th className="n">Valor</th><th>Resultado</th><th>Agendamento</th></tr></thead>
+              <thead><tr><th>Linha</th><th>Data</th><th>Descrição</th><th className="n">Valor</th><th>Resultado</th><th>Pagamento / recebível</th></tr></thead>
               <tbody>
                 {rc.lines.map((l) => (
                   <tr key={l.line}>
                     <td>{l.line}</td><td>{dd(l.date)}</td><td>{l.description}</td><td className="n">{l.amount_cents != null ? brl(l.amount_cents) : ""}</td>
                     <td><span className={`pill ${RES[l.result][1]}`}>{RES[l.result][0]}</span><div className="small">{l.note}</div></td>
-                    <td>{l.payment && <>{l.payment.payee} · {l.payment.company}<div className="small">{l.payment.description}</div></>}</td>
+                    <td>{l.payment && <>Pagar: {l.payment.payee} · {l.payment.company}<div className="small">{l.payment.description}</div></>}{l.receivable && <>Receber: {l.receivable.customer} · {l.receivable.company}<div className="small">{l.receivable.description} · venc. {dd(l.receivable.due_date)}</div></>}</td>
                   </tr>
                 ))}
               </tbody>

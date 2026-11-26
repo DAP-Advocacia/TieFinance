@@ -71,6 +71,7 @@ export type ReconcileLine = {
   result: "match" | "ambiguous" | "unmatched" | "ignored" | "error";
   note?: string;
   payment?: PaymentDTO;
+  receivable?: ReceivableDTO;
   candidates?: PaymentDTO[];
 };
 
@@ -101,6 +102,7 @@ export type ReceivableDTO = {
   bank: string;
   customer_id: string;
   customer: string;
+  customer_document: string;
   kind: RecvKind;
   description: string;
   amount_cents: number;

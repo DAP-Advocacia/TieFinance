@@ -15,3 +15,8 @@ rp.tar.gz
 
 tools/local-db/node_modules/
 tools/local-db/.pgdata/
+
+# extratos reais (dados pessoais de clientes): nunca versionar
+/*.xlsx
+/*.csv
+/*.ofx

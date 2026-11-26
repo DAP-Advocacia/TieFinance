@@ -162,7 +162,7 @@ assert.equal(await status(thy.req("POST", "/reconcile/preview", { form: stmt(csv
 }
 const pv = await j(thy.req("POST", "/reconcile/preview", { form: stmt(csv) }));
 assert.equal(pv.duplicate_of, null); assert.equal(pv.account.bank, "Santander"); assert.ok(pv.file_hash.length === 64);
-assert.deepEqual(pv.lines.map((l) => l.result), ["match", "unmatched", "ignored"]);
+assert.deepEqual(pv.lines.map((l) => l.result), ["match", "unmatched", "unmatched"]);
 const items = pv.lines.filter((l) => l.result === "match").map((l) => ({ payment_id: l.payment.id, paid_date: l.date, ref: `linha ${l.line}` }));
 const wrongAcc = await j(thy.post("/reconcile/confirm", { items, file: "e.csv", bank_account_id: BANK2 }));
 assert.equal(wrongAcc.paid.length, 0); assert.equal(wrongAcc.errors.length, items.length);
@@ -275,6 +275,23 @@ ok("auditoria e exportacoes CSV");
   assert.equal((await j(bru.get("/receivables?status=received"))).length, 1);
   const sm1 = await j(bru.get("/receivables/summary"));
   assert.equal(sm1.open.count, 2); assert.equal(sm1.overdue.cents, 200000);
+  // conciliacao de ENTRADAS: cabecalho deslocado (estilo Santander), CPF/CNPJ no historico, parcela mais antiga
+  {
+    const text = "AGENCIA;3957;CONTA;1\n\nData;Historico;Documento;Valor (R$);Saldo (R$)\n10/04/2026;PIX RECEBIDO  11111111000111;;1000,00;5000\n10/04/2026;DEBITO X;;-50,00;4950\n10/04/2026;PIX RECEBIDO  99999999999;;1000,00;5950\n";
+    const f = () => { const fd = new FormData(); fd.set("file", new File([text], "santander.csv")); fd.set("bank_account_id", BANK); return fd; };
+    const pv = await j(thy.req("POST", "/reconcile/preview", { form: f() }));
+    assert.deepEqual(pv.lines.map((l) => l.result), ["match", "unmatched", "unmatched"]);
+    assert.equal(pv.lines[0].line, 4); assert.equal(pv.lines[0].receivable.id, rec.ids[1]);
+    assert.equal(await status(thy.req("POST", "/reconcile/preview", { form: (() => { const fd = f(); fd.set("bank_account_id", BANK2); return fd; })() })), 200);
+    const cf = await j(thy.post("/reconcile/confirm", { items: [{ receivable_id: rec.ids[1], paid_date: "2026-04-10", ref: "linha 4" }], file: "santander.csv", bank_account_id: BANK, file_hash: pv.file_hash, total_lines: pv.total_lines }));
+    assert.deepEqual(cf.paid, [rec.ids[1]]);
+    const again = await j(thy.post("/reconcile/confirm", { items: [{ receivable_id: rec.ids[1], paid_date: "2026-04-10", ref: "x" }], file: "santander.csv", bank_account_id: BANK }));
+    assert.equal(again.errors.length, 1); // baixa dupla
+    const wrong = await j(thy.post("/reconcile/confirm", { items: [{ receivable_id: rec.ids[2], paid_date: "2026-04-10", ref: "x" }], file: "x.csv", bank_account_id: BANK2 }));
+    assert.equal(wrong.paid.length, 0); // outra conta
+    const r2 = (await j(bru.get("/receivables"))).find((r) => r.id === rec.ids[1]);
+    assert.equal(r2.status, "received"); assert.equal(r2.received_via, "extrato");
+  }
   const csvText = await (await thy.get("/export/receivables")).text();
   assert.ok(csvText.includes("Cliente Alfa") && csvText.includes("Recebido") && csvText.includes("1/3"));
   const actsR = new Set((await j(thy.get("/audit"))).map((a) => a.action));

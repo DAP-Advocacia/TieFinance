@@ -11,7 +11,7 @@ export const MAX_INSTALLMENTS = 60;
 
 function base(db: Db | Tx) {
   return db
-    .select({ r: receivables, customerName: customers.name, companyName: companies.name, bankName: bankAccounts.bank, bankNick: bankAccounts.nickname, creatorName: users.name })
+    .select({ r: receivables, customerName: customers.name, customerDoc: customers.document, companyName: companies.name, bankName: bankAccounts.bank, bankNick: bankAccounts.nickname, creatorName: users.name })
     .from(receivables)
     .innerJoin(customers, eq(customers.id, receivables.customerId))
     .innerJoin(companies, eq(companies.id, receivables.companyId))
@@ -31,6 +31,7 @@ function toDTO(x: Row, today = todaySP()): ReceivableDTO {
     bank: `${x.bankName} · ${x.bankNick}`,
     customer_id: r.customerId,
     customer: x.customerName,
+    customer_document: x.customerDoc,
     kind: r.kind as RecvKind,
     description: r.description,
     amount_cents: r.amountCents,

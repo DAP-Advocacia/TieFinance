@@ -6,7 +6,7 @@ export const POST = route(["auditoria", "admin"], async ({ req, user }) => {
   const d = await body(
     req,
     z.object({
-      items: z.array(z.object({ payment_id: z.string(), paid_date: z.string(), ref: z.string().default("") })).max(500),
+      items: z.array(z.object({ payment_id: z.string().optional(), receivable_id: z.string().optional(), paid_date: z.string(), ref: z.string().default("") })).max(500),
       file: z.string().default(""),
       bank_account_id: z.string().min(1, "Selecione a conta bancaria"),
       file_hash: z.string().default(""),
