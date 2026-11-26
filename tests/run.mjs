@@ -224,6 +224,64 @@ assert.equal(await status(thy.get("/export/audit")), 200);
 assert.ok((await (await thy.get("/export/payments")).text()).includes("Papelaria"));
 ok("auditoria e exportacoes CSV");
 
+// --- contas a receber ---
+{
+  assert.equal(await status(thy.post("/customers", { name: "x" })), 403);
+  assert.equal(await status(bru.post("/customers", { name: "x" })), 403);
+  assert.equal(await status(mar.post("/customers", { name: "  " })), 422);
+  const cu = (await j(mar.post("/customers", { name: "Cliente Alfa Ltda", document: "11.111.111/0001-11", contact: "alfa@x.com" }))).id;
+  const rbody = (o = {}) => ({ company_id: co, bank_account_id: BANK, customer_id: cu, kind: "honorario", description: "Honorarios", amount: "1000.00", due_date: "2026-12-31", ...o });
+  assert.equal(await status(thy.post("/receivables", rbody())), 403);
+  assert.equal(await status(mar.post("/receivables", rbody({ kind: "xx" }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ amount: "0" }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ due_date: "2026-02-30" }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ installments: 61 }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ kind: "avulso", installments: 2 }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ bank_account_id: BANK_OTHER }))), 422);
+  assert.equal(await status(mar.post("/receivables", rbody({ customer_id: "x".repeat(32) }))), 404);
+
+  // recorrencia mensal: dia 31 ajusta ao fim do mes; idempotencia por request_key
+  const rec = await j(mar.post("/receivables", rbody({ due_date: "2026-01-31", installments: 3, request_key: "k-rec-1" })));
+  assert.equal(rec.ids.length, 3); assert.equal(rec.duplicate, false);
+  const again = await j(mar.post("/receivables", rbody({ due_date: "2026-01-31", installments: 3, request_key: "k-rec-1" })));
+  assert.equal(again.duplicate, true); assert.deepEqual(again.ids, rec.ids);
+  let all = await j(bru.get("/receivables"));
+  assert.equal(all.length, 3);
+  assert.deepEqual(all.map((r) => r.due_date), ["2026-01-31", "2026-02-28", "2026-03-31"]);
+  assert.equal(all[0].installment, 1); assert.equal(all[2].installments, 3);
+  assert.ok(all.every((r) => r.overdue && r.days_late > 0)); // 2026-01..03 ja venceram
+
+  const future = (await j(mar.post("/receivables", rbody({ kind: "avulso", due_date: "2099-01-10", amount: "250,50", description: "Consulta avulsa" })))).ids[0];
+  const sm0 = await j(bru.get("/receivables/summary"));
+  assert.equal(sm0.open.count, 4); assert.equal(sm0.overdue.count, 3); assert.equal(sm0.overdue.cents, 300000);
+  assert.equal(sm0.open.cents, 300000 + 25050); assert.equal(sm0.aging.a_vencer, 25050);
+  assert.ok(sm0.default_rate > 90 && sm0.by_customer[0].name === "Cliente Alfa Ltda");
+
+  // baixa
+  assert.equal(await status(bru.post(`/receivables/${rec.ids[0]}/receive`, {})), 403);
+  assert.equal(await status(mar.post(`/receivables/${rec.ids[0]}/receive`, { received_date: "2099-01-01" })), 422);
+  assert.equal(await status(mar.post(`/receivables/${"x".repeat(32)}/receive`, {})), 404);
+  assert.equal(await status(mar.post(`/receivables/${rec.ids[0]}/receive`, { received_date: "2026-02-05", ref: "PIX 123" })), 200);
+  assert.equal(await status(mar.post(`/receivables/${rec.ids[0]}/receive`, {})), 409); // baixa dupla
+  assert.equal(await status(mar.post(`/receivables/${rec.ids[0]}/cancel`, { reason: "erro" })), 409); // recebido nao cancela
+  assert.equal(await status(mar.post(`/receivables/${future}/cancel`, { reason: "x" })), 422);
+  assert.equal(await status(mar.post(`/receivables/${future}/cancel`, { reason: "Lancado em duplicidade" })), 200);
+  all = await j(bru.get("/receivables"));
+  const first = all.find((r) => r.id === rec.ids[0]);
+  assert.equal(first.status, "received"); assert.equal(first.received_via, "manual"); assert.equal(first.overdue, false);
+  assert.equal(all.find((r) => r.id === future).status, "cancelled");
+  assert.equal((await j(bru.get("/receivables?status=overdue"))).length, 2);
+  assert.equal((await j(bru.get("/receivables?q=alfa"))).length, 4);
+  assert.equal((await j(bru.get("/receivables?status=received"))).length, 1);
+  const sm1 = await j(bru.get("/receivables/summary"));
+  assert.equal(sm1.open.count, 2); assert.equal(sm1.overdue.cents, 200000);
+  const csvText = await (await thy.get("/export/receivables")).text();
+  assert.ok(csvText.includes("Cliente Alfa") && csvText.includes("Recebido") && csvText.includes("1/3"));
+  const actsR = new Set((await j(thy.get("/audit"))).map((a) => a.action));
+  for (const a of ["customer.create", "receivable.create", "receivable.receive", "receivable.cancel", "export.receivables"]) assert.ok(actsR.has(a), a);
+  ok("contas a receber (clientes, recorrencia, idempotencia, baixa, cancelamento, aging, CSV, auditoria)");
+}
+
 // --- limite de tentativas ---
 for (let i = 0; i < 5; i++) await anon().post("/login", { email: "bruno@t.com", password: "errada" });
 assert.equal(await status(anon().post("/login", { email: "bruno@t.com", password: PW })), 429);

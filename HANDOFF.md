@@ -24,6 +24,8 @@ Uma empresa (DAP Advocacia) com vários **CNPJs pagadores**, cada um com várias
 7. Camada visual: marca em texto vetorial nítido, fundo animado do login, transições de página, revelação ao rolar, gráficos animados, listas suspensas próprias.
 8. **Contas bancárias por CNPJ** (migração 0004): agendamento escolhe a conta, conciliação por conta, dashboard/exportação por conta, histórico de extratos importados. Postgres local descartável para testes (`tools/local-db/`). Correção de um erro grave que derrubava a tela ao abrir listas suspensas (React #185).
 
+9. **Contas a Receber** (migração 0005, **só no código e no banco local; ainda não aplicada no Supabase nem publicada**): clientes (`customers`) e recebíveis (`receivables`) por CNPJ e conta de destino; tipos honorários/manutenção/avulso; recorrência mensal (1–60, dia mantido, ajusta fim de mês) com `request_key` idempotente; baixa manual e cancelamento com motivo; atraso calculado (aberto e vencido); aging, inadimplência e maiores devedores; CSV; auditoria. Lança/baixa: financeiro e admin; os demais perfis só leem. Telas em `src/app/receber.tsx`, regras em `src/lib/receivables.ts`.
+
 Commits principais na `main`: `9926169` (v1) → `475d8b5` (Next.js) → `8f23a0a` (visual) → `60dd11d` (contas bancárias).
 
 ## 3. Arquitetura
@@ -53,7 +55,7 @@ Commits principais na `main`: `9926169` (v1) → `475d8b5` (Next.js) → `8f23a0
 - `AGENTS.md` (gerado pelo `next dev`): esta versão do Next tem mudanças; consultar `node_modules/next/dist/docs/` antes de alterar convenções.
 
 ## 4. Banco (Supabase)
-- Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, sa-east-1). Schema `public`, RLS ligado **sem policies** (a API REST pública não enxerga nada; só o app acessa direto pelo Postgres). Migrações **0001–0004** aplicadas (`db/schema.sql` = banco novo completo; `db/migrations/` = incrementais).
+- Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, sa-east-1). Schema `public`, RLS ligado **sem policies** (a API REST pública não enxerga nada; só o app acessa direto pelo Postgres). Migrações **0001–0004** aplicadas (a **0005** está pendente) (`db/schema.sql` = banco novo completo; `db/migrations/` = incrementais).
 - Tabelas: `users, sessions, companies, bank_accounts, payees, payments, attachments, statement_imports, audit, login_attempts` (+ `alembic_version` herdada da v1, inofensiva).
 - Conteúdo: admin `admin@dap.local`; usuário `thyago@demo.local` (admin, criado à mão por terceiros); **dados demo** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs × 2 contas, 10 favorecidos, `demo-mariana@demo.local` e `demo-bruno@demo.local`). Remoção: `DELETE`s comentados no fim do arquivo.
 - O backup real é o do Supabase (a "exportação de dados" do app é só para consulta).
@@ -66,7 +68,7 @@ Commits principais na `main`: `9926169` (v1) → `475d8b5` (Next.js) → `8f23a0
   cd tools/local-db && npm install && node start.mjs     # imprime a DATABASE_URL local
   node newdb.mjs tf_fresh                                 # banco vazio com db/schema.sql
   # app: DATABASE_URL=... ERP_ADMIN_EMAIL=admin@teste.com ERP_ADMIN_PASSWORD=SenhaAdmin#12345 npm run build && npm start -- -p 3300
-  BASE_URL=http://127.0.0.1:3300 npm test                 # 21 grupos, em banco VAZIO
+  BASE_URL=http://127.0.0.1:3300 npm test                 # 22 grupos, em banco VAZIO
   node seed.mjs                                           # opcional: dados demo
   ```
 - **Capturas/verificação visual no Windows:** Edge headless via DevTools. Dica: **não usar `--disable-gpu`** ao capturar telas com `<dialog>`/animações (a captura trava); ver erros reais com `Runtime.exceptionThrown`.

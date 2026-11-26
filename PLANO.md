@@ -6,7 +6,7 @@ Aprovado pelo usuário em 2026-11-26. Base: menu planejado pelo Thyago (auditori
 | Módulo | Situação |
 |---|---|
 | Dashboard Executivo | Parcial: indicadores de pagamentos. Faltam receitas, saldos, inadimplência, EBITDA |
-| Contas a Receber | Não iniciado |
+| Contas a Receber | **Feito no código** (clientes, recebíveis, recorrência, baixa manual, aging, CSV). Falta: baixa por extrato (entradas), juros/multa, edição, importação Bitrix/Asaas; migração 0005 ainda não aplicada em produção |
 | Contas a Pagar | **Feito** (falta alçada por valor) |
 | Tesouraria | Não iniciado |
 | Conciliação Bancária | Parcial: extrato por conta (Santander/Bradesco/Nubank). Faltam integrações Asaas, Luna Pay, EFI |
@@ -27,7 +27,10 @@ Aprovado pelo usuário em 2026-11-26. Base: menu planejado pelo Thyago (auditori
 
 Cada módulo segue o mesmo ritual: migração SQL (`db/migrations/000N`) → atualizar `db/schema.sql` e `src/db/schema.ts` → regras em `src/lib/` → rotas em `src/app/api/` → telas → testes em `tests/run.mjs` (banco local vazio) → **abrir as telas no navegador** → aplicar migração no Supabase → push (deploy) → conferir em produção.
 
-## 1. Contas a Receber
+## 1. Contas a Receber — implementado (ver HANDOFF, item 9)
+Decisões adotadas por padrão, a confirmar com o usuário: lançam e baixam **financeiro e admin** (sem etapa de aprovação); **sem juros/multa**; tipos honorário/manutenção/avulso; recorrência **mensal fixa** informando a quantidade de meses. Pendente deste módulo: conciliação de **entradas** pelo extrato (hoje créditos são ignorados), edição de recebível (por ora cancelar e lançar de novo) e importação do Bitrix/Asaas.
+
+Escopo original:
 Escopo: cadastro de **clientes** (parte de `payees` ou nova tabela `customers`), **recebíveis** (honorários, manutenção/recorrência, avulsos) por CNPJ e conta bancária de destino, vencimento, situação (a vencer, recebido, vencido, cancelado), **baixa** manual e por extrato (entradas), **inadimplência/aging** (a vencer, 1–30, 31–60, 61–90, +90). Recorrência com chave de idempotência (sem duplicar). Dashboard: a receber, recebido no mês, inadimplência. Exportação CSV. Auditoria.
 Decisões necessárias: quem lança e quem aprova recebíveis (perfis); juros/multa; se honorários vêm do Bitrix/Asaas (importação futura).
 Perguntas: tipos de recebível (lista); recorrência mensal fixa ou por contrato?

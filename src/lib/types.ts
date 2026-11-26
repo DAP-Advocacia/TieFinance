@@ -84,3 +84,44 @@ export const BANKS = [
   { name: "EFI Bank", kind: "api" },
   { name: "Outro", kind: "extrato" },
 ] as const;
+
+export type CustomerDTO = { id: string; name: string; document: string; contact: string; active: boolean };
+export type RecvKind = "honorario" | "manutencao" | "avulso";
+export type RecvStatus = "open" | "received" | "cancelled";
+export const RECV_KINDS: { id: RecvKind; label: string }[] = [
+  { id: "honorario", label: "Honorários" },
+  { id: "manutencao", label: "Manutenção" },
+  { id: "avulso", label: "Avulso" },
+];
+export type ReceivableDTO = {
+  id: string;
+  company_id: string;
+  company: string;
+  bank_account_id: string;
+  bank: string;
+  customer_id: string;
+  customer: string;
+  kind: RecvKind;
+  description: string;
+  amount_cents: number;
+  due_date: string;
+  status: RecvStatus;
+  overdue: boolean;
+  days_late: number;
+  installment: number;
+  installments: number;
+  created_by: string;
+  received_date: string | null;
+  received_via: string | null;
+  received_ref: string | null;
+  reason: string | null;
+};
+export type ReceivablesSummaryDTO = {
+  open: Sum;
+  overdue: Sum;
+  received_month: Sum;
+  next30: Sum;
+  default_rate: number; // % do saldo em aberto que esta vencido
+  aging: DashboardDTO["aging"];
+  by_customer: Rank[];
+};

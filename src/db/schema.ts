@@ -1,4 +1,5 @@
-import { bigint, boolean, customType, date, index, integer, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigint, boolean, customType, date, index, integer, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 // Timestamps sao "timestamp without time zone" guardados em UTC; lidos como string 'YYYY-MM-DD HH:MM:SS[.fff]'.
 const ts = (name: string) => timestamp(name, { mode: "string" });
@@ -103,3 +104,37 @@ export const loginAttempts = pgTable("login_attempts", {
   email: varchar("email", { length: 160 }).notNull(),
   ts: ts("ts").notNull(),
 });
+
+export const customers = pgTable("customers", {
+  id: varchar("id", { length: 32 }).primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  document: varchar("document", { length: 20 }).notNull(),
+  contact: varchar("contact", { length: 300 }).notNull(),
+  active: boolean("active").notNull(),
+});
+
+export const receivables = pgTable(
+  "receivables",
+  {
+    id: varchar("id", { length: 32 }).primaryKey(),
+    companyId: varchar("company_id", { length: 32 }).notNull().references(() => companies.id),
+    bankAccountId: varchar("bank_account_id", { length: 32 }).notNull().references(() => bankAccounts.id),
+    customerId: varchar("customer_id", { length: 32 }).notNull().references(() => customers.id),
+    kind: varchar("kind", { length: 12 }).notNull(),
+    description: varchar("description", { length: 300 }).notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    dueDate: date("due_date", { mode: "string" }).notNull(),
+    status: varchar("status", { length: 12 }).notNull(),
+    requestKey: varchar("request_key", { length: 64 }),
+    installment: integer("installment").notNull().default(1),
+    installments: integer("installments").notNull().default(1),
+    createdBy: varchar("created_by", { length: 32 }).notNull().references(() => users.id),
+    createdAt: ts("created_at").notNull(),
+    receivedDate: date("received_date", { mode: "string" }),
+    receivedVia: varchar("received_via", { length: 12 }),
+    receivedRef: varchar("received_ref", { length: 300 }),
+    receivedBy: varchar("received_by", { length: 32 }).references(() => users.id),
+    reason: varchar("reason", { length: 300 }),
+  },
+  (t) => [index("ix_receivables_due").on(t.dueDate), index("ix_receivables_customer").on(t.customerId), uniqueIndex("ux_receivables_request").on(t.requestKey, t.installment).where(sql`${t.requestKey} is not null`)],
+);

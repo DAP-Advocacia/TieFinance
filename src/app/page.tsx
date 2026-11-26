@@ -6,11 +6,13 @@ import { Backdrop, Wordmark, useParallax } from "./login-fx";
 import { useReveal } from "./reveal";
 import { Symbol } from "./symbol";
 import { ToastProvider, useToast } from "./ui";
+import { ReceivablesView } from "./receber";
 import { AdminView, AuditView, Dashboard, PayeesView, PaymentFormModal, PaymentsView, PendingView, ReconcileView, type Ctx, type Me } from "./views";
 
 const IC: Record<string, string> = {
   dash: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   pay: '<path d="M5 19 19 5M9 5h10v10"/>',
+  recv: '<path d="M19 5 5 19M15 19H5V9"/>',
   pend: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   users: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m1-15a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5"/>',
   bank: '<path d="M3 9h18L12 3 3 9Zm2 3v6m7-6v6m7-6v6M3 21h18"/>',
@@ -19,15 +21,16 @@ const IC: Record<string, string> = {
 };
 type Item = [string, string, string];
 const NAV: Record<Me["role"], [string, Item[]][]> = {
-  admin: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pend", "Para aprovar", "pend"], ["pay", "Agendamentos", "pay"], ["payees", "Favorecidos", "users"]]], ["CONTROLE", [["rec", "Conciliação", "bank"], ["aud", "Auditoria", "shield"]]], ["ADMINISTRAÇÃO", [["adm", "Usuários e CNPJs", "set"]]]],
-  financeiro: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pay", "Agendamentos", "pay"], ["payees", "Favorecidos", "users"]]]],
-  aprovador: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pend", "Para aprovar", "pend"], ["pay", "Todos os agendamentos", "pay"]]]],
-  auditoria: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["CONTROLE", [["pay", "Agendamentos", "pay"], ["rec", "Conciliação por extrato", "bank"], ["aud", "Auditoria", "shield"]]]],
+  admin: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pend", "Para aprovar", "pend"], ["pay", "Agendamentos", "pay"], ["payees", "Favorecidos", "users"]]], ["RECEBIMENTOS", [["recv", "Contas a receber", "recv"]]], ["CONTROLE", [["rec", "Conciliação", "bank"], ["aud", "Auditoria", "shield"]]], ["ADMINISTRAÇÃO", [["adm", "Usuários e CNPJs", "set"]]]],
+  financeiro: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pay", "Agendamentos", "pay"], ["payees", "Favorecidos", "users"]]], ["RECEBIMENTOS", [["recv", "Contas a receber", "recv"]]]],
+  aprovador: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["PAGAMENTOS", [["pend", "Para aprovar", "pend"], ["pay", "Todos os agendamentos", "pay"]]], ["RECEBIMENTOS", [["recv", "Contas a receber", "recv"]]]],
+  auditoria: [["VISÃO GERAL", [["dash", "Dashboard", "dash"]]], ["RECEBIMENTOS", [["recv", "Contas a receber", "recv"]]], ["CONTROLE", [["pay", "Agendamentos", "pay"], ["rec", "Conciliação por extrato", "bank"], ["aud", "Auditoria", "shield"]]]],
 };
 const TITLES: Record<string, [string, string]> = {
   dash: ["Dashboard", "Visão financeira e analítica dos pagamentos"],
   pend: ["Para aprovar", "Agendamentos aguardando decisão"],
   pay: ["Agendamentos", "Todos os pagamentos agendados"],
+  recv: ["Contas a receber", "Honorários, manutenção, recebimentos e inadimplência"],
   payees: ["Favorecidos", "Cadastro de favorecidos e dados de pagamento"],
   rec: ["Conciliação por extrato", "Baixa automática dos pagamentos a partir do extrato bancário"],
   aud: ["Auditoria", "Trilha de eventos do sistema"],
@@ -108,7 +111,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     const nw = prompt("Nova senha (12+ caracteres):"); if (!nw) return;
     try { await J("/me/password", { method: "POST", json: { current: cur, new: nw } }); toast("Senha alterada"); } catch (e) { toast((e as Error).message); }
   };
-  const view = { dash: <Dashboard c={c} tick={tick} onBadge={setBadge} />, pay: <PaymentsView c={c} tick={tick} />, pend: <PendingView c={c} tick={tick} />, payees: <PayeesView c={c} />, rec: <ReconcileView c={c} />, aud: <AuditView />, adm: <AdminView c={c} /> }[tab];
+  const view = { dash: <Dashboard c={c} tick={tick} onBadge={setBadge} />, pay: <PaymentsView c={c} tick={tick} />, pend: <PendingView c={c} tick={tick} />, recv: <ReceivablesView c={c} tick={tick} />, payees: <PayeesView c={c} />, rec: <ReconcileView c={c} />, aud: <AuditView />, adm: <AdminView c={c} /> }[tab];
   return (
     <div className={menu ? "menu-open" : ""}>
       <div className="overlay" onClick={() => setMenu(false)} />
