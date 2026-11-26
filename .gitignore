@@ -1,5 +1,11 @@
-data/
+node_modules/
+.next/
 .env
+.env.local
+.vercel/
+data/
+*.tsbuildinfo
+next-env.d.ts
 __pycache__/
 *.pyc
 .sprite

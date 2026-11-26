@@ -1,53 +1,65 @@
-# HANDOFF — TieFinance PVP
+# HANDOFF — TieFinance
 
-Data: 2026-11-25. Estado: PVP funcional em teste com dados fictícios. **Não usar com dados reais ainda** (ver Pendências).
+Atualizado em 2026-11-26. Estado: **reescrita em Next.js concluída e testada em Postgres real; ainda não publicada na Vercel.** Não usar com dados reais antes de fechar os itens de "Antes de dados reais".
 
 ## 1. Contexto
-Base: documentação ERP Finance v0.2 do Thyago (auditoria) em `docs/`. O código v0.2 original não estava disponível; o PVP foi **reconstruído** a partir da especificação, reduzido ao essencial:
+Base: documentação ERP Finance v0.2 do Thyago (auditoria) em `docs/`. O PVP foi construído a partir dela, reduzido ao essencial:
 
 - **Mariana** (financeiro) agenda pagamentos; **Dr. Bruno** (presidente/aprovador) aprova; **Thyago** (auditoria) audita e concilia por extrato.
-- Uma empresa (DAP Advocacia) com vários **CNPJs pagadores** (cadastro `companies`).
+- Uma empresa (DAP Advocacia) com vários **CNPJs pagadores** (tabela `companies`).
 - Baixa: manual (Mariana) ou por upload de extrato (Thyago).
 - Notificação ao presidente: **em standby** por decisão do usuário.
 
+Histórico: v1 em FastAPI (branch `main`, hoje em `legacy-python/`), rodando no Fly.io Sprites; reescrita em Next.js nesta branch para hospedar na Vercel, perto do banco (São Paulo) e eliminar a latência (o Sprite fica em Chicago).
+
 ## 2. Arquitetura
-- Monólito FastAPI (`app/main.py`): modelos SQLAlchemy, rotas, regras, exportações. Front em `app/index.html` (JS puro, sem build).
-- Auth: senha scrypt; token de sessão aleatório (guarda-se o SHA-256), expira em 8 h; limite de 5 falhas/15 min por e-mail (**em memória**).
-- Valores em **centavos** (inteiro). Datas ISO. Auditoria na mesma transação da operação.
-- Migrações: Alembic. `0001` = baseline. No startup: se existe `users` sem `alembic_version`, faz `stamp 0001` (adota bancos antigos) e depois `upgrade head`.
-- Tabelas: `users, sessions, companies, payees, payments, audit`.
+- **Next.js 16 (App Router) + React 19 + TypeScript.** Telas em `src/app/` (client components); API em `src/app/api/**/route.ts` (route handlers).
+- `src/lib/http.ts`: `route(roles, fn)` envolve cada handler: checagem de origem (CSRF), autenticação por cookie, autorização por perfil e erros padronizados (`{detail}`).
+- **Auth:** senha scrypt (formato `salt_hex$hash_hex`, **compatível com o hash do Python**: o admin criado na v1 continua entrando). Token de sessão aleatório em cookie `HttpOnly; SameSite=Lax; Secure`; guarda-se o SHA-256 em `sessions`; expira em 8 h. Limite de 5 falhas/15 min **persistido na tabela `login_attempts`** (serverless não guarda memória).
+- **Dados:** Drizzle ORM sobre `postgres` (postgres.js), `prepare:false` (compatível com o pooler em modo transação). Valores em **centavos**; datas ISO; timestamps UTC sem fuso. Auditoria gravada na mesma transação da operação.
+- **Anexos** na tabela `attachments` (bytea), máx. 4 MB; servidos com `nosniff` e CSP `sandbox`.
+- **Gráficos** do dashboard em SVG/CSS puro, só com tokens (sem biblioteca).
+- Extrato: CSV (`;`/`,`, UTF-8/Latin-1) ou XLSX (`read-excel-file`). Exportações CSV e zip (`fflate`).
 
 ### Regras de negócio
-- Pendente → Aprovado/Rejeitado (aprovador/admin, diferente do criador; rejeição exige motivo) → Pago (somente aprovado).
-- Aprovado não edita. Rejeitado/pendente editam; editar rejeitado volta a pendente. Cancelar exige motivo, não vale para pago.
-- Conciliação (`/api/reconcile/*`): lê CSV (`;`/`,`) ou XLSX com colunas Data/Valor/Descrição; cruza saídas com **aprovados** por valor exato + data ±3 dias + nome do favorecido; só baixa após confirmação; nunca baixa duas vezes.
-- Auditoria registra: login (e falha), CRUD, aprovação/rejeição, pagamento, conciliação, visualização de anexo, exportações, backup, troca de perfil/senha.
+- Pendente → Aprovado/Rejeitado (aprovador/admin, diferente do criador; rejeição exige motivo) → Pago (somente aprovado). Decisão e baixa usam `UPDATE ... WHERE status = ...` (sem decisão dupla em concorrência).
+- Aprovado não edita. Pendente/rejeitado editam; editar rejeitado volta a pendente. Cancelar exige motivo, não vale para pago.
+- Conciliação: cruza saídas com **aprovados** por valor exato + data ±3 dias + nome do favorecido; só baixa após confirmação; nunca baixa duas vezes.
+- Auditoria: login (e falha), CRUD, aprovação/rejeição, pagamento, conciliação, visualização de anexo, exportações, troca de perfil/senha.
 
-### Endpoints principais
-`/api/login|logout|me`, `/api/me/password`, `/api/users` (+ `/role`, `/password`, `/active`), `/api/companies`, `/api/payees`, `/api/payments` (+ `/approve`, `/reject`, `/cancel`, `/pay`, `/attachment`, `approve-batch`), `/api/dashboard`, `/api/reconcile/preview|confirm`, `/api/audit`, `/api/export/payments|audit`, `/api/backup`. Docs interativas em `/docs`.
+### Endpoints
+`/api/login|logout|me`, `/api/me/password`, `/api/users` (+ `/[id]/role|password|active`), `/api/companies`, `/api/payees`, `/api/payments` (+ `/[id]`, `/approve`, `/reject`, `/cancel`, `/pay`, `/attachment`, `approve-batch`), `/api/dashboard`, `/api/pending-count`, `/api/reconcile/preview|confirm`, `/api/audit`, `/api/export/payments|audit`, `/api/backup` (exportação de dados).
 
-## 3. Deploy atual (teste)
-- **Fly.io Sprites**, org `gabriel-alves-532`, sprite `rp-financeiro`. URL: https://rp-financeiro-b6xnv.sprites.app (URL pública; proteção = login do app).
-- App em `/home/sprite/erp` (venv), dados em `/home/sprite/erp-data` (SQLite + uploads). Serviço `web` na porta 8080, gerido por `sprite-env services`; script de start `/home/sprite/erp/run.sh` (contém as variáveis do admin — **fora do git**).
-- Publicar: empacotar `app migrations alembic.ini requirements.txt tools`, enviar com `sprite exec --file`, extrair e `sprite-env services restart web`. Criar checkpoint antes (`sprite checkpoint create`; voltar com `sprite restore vN`).
-- O plano Free tem US$ 1 de crédito por 7 dias; depois exige cartão. O arquivo `.sprite` local aponta para o sprite (está no `.gitignore`).
-- Observado: ~400–600 ms por requisição (latência até o Sprite, fora do Brasil).
+## 3. Banco (Supabase)
+- Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, região sa-east-1). Tabelas no schema `public` com RLS ligado e sem policies; migrações 0001–0003 aplicadas.
+- Conteúdo atual: 1 usuário (admin `admin@dap.local`, criado pela v1) e nada mais.
+- Schemas `tf_test` e `tf_ts` foram criados **só para testes** (dados fictícios) e **ainda existem**; podem ser apagados: `DROP SCHEMA tf_test CASCADE; DROP SCHEMA tf_ts CASCADE;`.
+- O backup real é o do Supabase (a exportação do app é apenas para consulta).
 
-## 4. Vercel — viabilidade
-**Não recomendado como está.** O app depende de disco persistente (SQLite + anexos) e de estado em memória (limite de login), e o Vercel é serverless com filesystem efêmero. Funcionaria com: PostgreSQL externo (Neon/Supabase) via `DATABASE_URL`, anexos em storage de objetos (Vercel Blob/S3) no lugar de `uploads/`, rate limit de login no banco, backup via `pg_dump`, e adaptação de entrypoint (`api/index.py` expondo `app`) e migrações fora do cold start. Alternativas sem refatoração: VPS pequena/Fly.io (volume) ou Railway.
+## 4. Deploy na Vercel (passo a passo — ação do usuário)
+1. Em vercel.com → *Add New → Project* → importar `DAP-Advocacia/TieFinance`; escolher a branch **`nextjs`** (ou fazer o merge na `main` depois de validar).
+2. Framework: Next.js (detectado). `vercel.json` já fixa a região `gru1` (São Paulo).
+3. *Environment Variables* (Production):
+   - `DATABASE_URL` = string do **Transaction pooler** do Supabase (Connect → Transaction pooler, porta **6543**), no formato `postgresql://postgres.tcmiwjijrovoyspiurup:SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`.
+   - `ERP_ADMIN_EMAIL` e `ERP_ADMIN_PASSWORD` (12+ caracteres) — só valem se a tabela `users` estiver vazia.
+4. *Deploy*. Depois: login com o admin, **trocar a senha**, cadastrar CNPJs, favorecidos e os usuários reais.
+5. Validar a latência. Se estiver boa, desligar o Sprite (`sprite destroy -s rp-financeiro`, só com decisão do usuário).
 
-## 5. Pendências (ordem sugerida)
-1. **Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP), HTTPS garantido, backup automático (hoje só manual em Administração → Backup; Sprite tem checkpoints), desativar usuários `*@demo.local`, trocar a senha do admin (a inicial circulou em chat).
-2. Extrato **real** do banco do Thyago para ajustar o leitor (hoje espera Data/Descrição/Valor; OFX não suportado).
-3. Rate limit de login persistente (hoje em memória/por processo); MFA; recuperação de senha por e-mail.
-4. Hospedagem próxima (São Paulo) se a latência incomodar; avaliar Postgres.
-5. Notificação ao presidente (e-mail/WhatsApp) — standby.
-6. Permissões granulares (alçada por valor, escopo por CNPJ) — hoje perfis fixos.
-7. Testes: hoje um script e2e em SQLite; falta rodar em PostgreSQL, testes de UI e conversão para pytest/CI.
-8. Divisão de `main.py` em módulos e do front em componentes quando crescer.
-9. Itens do roadmap v0.3+ (parcelas, competência, plano de contas, fluxo de caixa, DRE, orçamento) estão em `docs/` e **não** fazem parte do PVP.
+Atenção: o plano Hobby da Vercel limita funções a 10 s e corpo a 4,5 MB. As operações do app cabem nisso; se o dashboard ficar lento com muitos dados, mover agregações para SQL.
+
+## 5. Pendências
+**Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP); HTTPS (a Vercel já fornece); trocar a senha do admin (a inicial circulou em chat); conferir backup/PITR do plano do Supabase; apagar os schemas de teste.
+1. Extrato **real** do banco do Thyago para ajustar o leitor (hoje espera Data/Descrição/Valor; OFX não suportado).
+2. Validação visual em navegador: as telas foram verificadas por build, tipos e testes de API, **não** por teste de interface. Conferir o login animado, dashboard, formulários e o layout mobile.
+3. MFA e recuperação de senha por e-mail.
+4. Notificação ao presidente (e-mail/WhatsApp) — standby.
+5. Permissões granulares (alçada por valor, escopo por CNPJ) — hoje perfis fixos.
+6. Testes de interface (Playwright) e CI (GitHub Actions rodando `npm run build` + `tests/run.mjs` em schema isolado).
+7. Anexos acima de 4 MB: upload direto ao Supabase Storage.
+8. Roadmap v0.3+ (parcelas, competência, plano de contas, fluxo de caixa, DRE, orçamento) está em `docs/` e **não** faz parte do PVP.
 
 ## 6. Cuidados
-- Nunca commitar `.env`, `data/`, `run.sh` ou senhas. Credenciais do admin ficam só no servidor.
-- Tela e gráficos nunca foram conferidos por automação de navegador; só testes de API e checagem de sintaxe do JS. Validar visualmente após mudanças.
-- Edições no `index.html` usam tokens CSS; não introduzir hex solto.
+- Nunca commitar `.env*`, senhas ou strings de conexão. `.env.example` só tem placeholders.
+- `tests/run.mjs` escreve dados fictícios: rode **apenas** em banco/schema vazio de teste (`DB_SCHEMA`), nunca no `public` de produção.
+- Edições de CSS: usar tokens (`var(--brand)` etc.); não introduzir hex solto.
+- Rollback: a v1 Python continua em `legacy-python/` e no Sprite (`rp-financeiro`, checkpoints `sprite checkpoint list`).

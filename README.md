@@ -1,7 +1,10 @@
-# TieFinance — PVP de agendamento de pagamentos
+# TieFinance — agendamento de pagamentos
 
-Aplicação web para a **DAP Advocacia** agendar pagamentos, aprovar e auditar, com dashboard analítico.
-Stack: FastAPI + SQLAlchemy + Alembic, front em HTML/CSS/JS puro (um arquivo), SQLite (dev/teste) ou PostgreSQL.
+Aplicação web da **DAP Advocacia** para agendar pagamentos, aprovar e auditar, com dashboard analítico.
+
+**Stack:** Next.js (App Router) + React + TypeScript · API em *route handlers* · Drizzle ORM · PostgreSQL (Supabase) · deploy na Vercel (`gru1`, São Paulo).
+
+> A versão anterior (FastAPI + SQLite/Postgres) está preservada em [`legacy-python/`](legacy-python/) e na branch `main`. Esta branch (`nextjs`) é a reescrita completa, com as mesmas regras de negócio.
 
 ## Fluxo
 
@@ -17,56 +20,67 @@ Situações: `pending`, `approved`, `rejected`, `paid`, `cancelled`. "Atrasado" 
 
 | Perfil | Pode |
 |---|---|
-| `admin` | Tudo (agendar, aprovar, pagar, cancelar, conciliar, auditoria, usuários, CNPJs, backup) |
+| `admin` | Tudo (agendar, aprovar, pagar, cancelar, conciliar, auditoria, usuários, CNPJs, exportação de dados) |
 | `financeiro` | Favorecidos, agendar/editar/cancelar, marcar pago |
 | `aprovador` | Aprovar/rejeitar (inclusive em lote) |
 | `auditoria` | Leitura, conciliação por extrato, trilha de auditoria, exportações |
 
-Regra transversal: **ninguém decide sobre o próprio agendamento**. Autorização sempre no servidor.
+Regra transversal: **ninguém decide sobre o próprio agendamento** (inclusive admin). Autorização sempre no servidor.
 
 ## Rodar localmente
 
-```powershell
-pip install -r requirements.txt
-$env:ERP_ADMIN_EMAIL="admin@exemplo.com"; $env:ERP_ADMIN_PASSWORD="<12+ caracteres>"
-uvicorn app.main:app --port 8000
+Requisitos: Node 20.9+ e um PostgreSQL com o schema aplicado (`db/schema.sql`).
+
+```bash
+npm install
+cp .env.example .env.local      # preencha DATABASE_URL e ERP_ADMIN_*
+npm run dev                     # http://localhost:3000
 ```
-Abra http://127.0.0.1:8000. O admin só é criado se o banco estiver vazio **e** a senha tiver 12+ caracteres (senão o console avisa).
 
-PostgreSQL via Docker: crie `.env` com `ERP_ADMIN_EMAIL`, `ERP_ADMIN_PASSWORD`, `DB_PASSWORD` e rode `docker compose up --build`.
-
-Dados fictícios para ver o dashboard: `python tools/seed_demo.py` (cria usuários `*@demo.local`, senha `DemoSenha#2026` — **nunca em produção**).
+O admin inicial é criado no **primeiro login** com `ERP_ADMIN_EMAIL`, se a tabela `users` estiver vazia e a senha tiver 12+ caracteres.
 
 ## Variáveis de ambiente
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `ERP_ADMIN_EMAIL` / `ERP_ADMIN_PASSWORD` | — | Admin inicial (banco vazio) |
-| `DATABASE_URL` | SQLite em `DATA_DIR/pvp.db` | Ex.: `postgresql+psycopg://user:pass@host/db` |
-| `DATA_DIR` | `./data` | Banco SQLite e anexos (`uploads/`) |
-| `RECONCILE_TOLERANCE_DAYS` | `3` | Janela de data na conciliação |
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | Postgres. Na Vercel use o **Transaction pooler** do Supabase (porta 6543) |
+| `ERP_ADMIN_EMAIL` / `ERP_ADMIN_PASSWORD` | Admin inicial (banco sem usuários) |
+| `RECONCILE_TOLERANCE_DAYS` | Janela de data na conciliação (padrão 3) |
+| `DB_SCHEMA` | Só para testes: isola em um schema próprio |
+
+## Banco de dados
+
+- Schema completo: [`db/schema.sql`](db/schema.sql). Migrações incrementais em `db/migrations/` (aplicar na ordem; o projeto Supabase atual já tem 0001–0003).
+- RLS ligado **sem policies** em todas as tabelas: a API REST pública do Supabase não enxerga nada; só o app acessa, direto pelo Postgres.
+- Anexos ficam na tabela `attachments` (limite de 4 MB por arquivo, por causa do limite de corpo da Vercel).
 
 ## Testes
 
-`python tests/test_pvp.py` — usa banco temporário e dados fictícios (permissões, fluxo, conciliação, auditoria, senha, backup, perfis, dashboard).
+Teste de ponta a ponta da API contra um servidor rodando em um **banco/schema vazio**:
+
+```bash
+npm run build && npm start &
+BASE_URL=http://127.0.0.1:3000 npm test
+```
+O servidor precisa de `ERP_ADMIN_EMAIL=admin@teste.com` e `ERP_ADMIN_PASSWORD=SenhaAdmin#12345`. Cobre permissões, fluxo completo, autoaprovação, anexos, conciliação, dashboard, senha, exportações, auditoria e limite de login (20 grupos de verificação). **Nunca aponte para o schema `public` em produção.**
 
 ## Estrutura
 
 ```
-app/main.py        API, modelos, regras (arquivo único)
-app/index.html     Front completo (login animado, dashboard, telas)
-app/static/        Logo/favicon servidos em /assets
-migrations/        Alembic (0001 = baseline); roda sozinho no startup
-tests/             Teste de ponta a ponta (script)
-tools/seed_demo.py Dados fictícios
-TieFinance_Kit/    Kit de identidade visual (logo, símbolo animado, login v4)
-docs/              Documentação de origem e protótipo de layout
-HANDOFF.md         Estado atual, decisões, deploy e pendências
+src/app/            Telas React (page.tsx, views.tsx, ui.tsx) e route handlers (api/**)
+src/lib/            Regras: auth, payments, dashboard, reconcile, audit, http, core
+src/db/             Drizzle (schema + conexão)
+db/                 schema.sql e migrações SQL
+tests/run.mjs       Teste e2e da API
+legacy-python/      Versão anterior (FastAPI) — referência e rollback
+TieFinance_Kit/     Kit de identidade visual
+docs/               Documentação de origem e protótipo de layout
+HANDOFF.md          Estado atual, decisões, deploy e pendências
 ```
 
 ## Identidade visual
-Tokens no `:root` de `app/index.html` (azul `#08245d`, ouro `#d4af37`, Plus Jakarta Sans). Regra: só tokens, ouro em no máximo 1–2 pontos por tela, estados em pares texto escuro/fundo suave, `tabular-nums` em valores.
+Tokens no `:root` de `src/app/globals.css` (azul `#08245d`, ouro `#d4af37`, Plus Jakarta Sans). Regra: só tokens, ouro em no máximo 1–2 pontos por tela, estados em pares texto escuro/fundo suave, `tabular-nums` em valores.
 
 ## Documentação
-- [HANDOFF.md](HANDOFF.md) — leia antes de continuar o projeto.
+- [HANDOFF.md](HANDOFF.md) — leia antes de continuar o projeto (inclui o passo a passo do deploy na Vercel).
 - [docs/ERP_Finance_Documentacao_v0.2.md](docs/ERP_Finance_Documentacao_v0.2.md) — visão de produto/roadmap (planejamento do Thyago, v0.2).
