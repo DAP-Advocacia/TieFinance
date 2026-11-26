@@ -21,6 +21,14 @@ Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e f
 - **Gráficos** do dashboard em SVG/CSS puro, só com tokens (sem biblioteca).
 - Extrato: CSV (`;`/`,`, UTF-8/Latin-1) ou XLSX (`read-excel-file`). Exportações CSV e zip (`fflate`).
 
+### Camada visual (resumo para quem for mexer)
+- `src/app/globals.css`: tokens no `:root` + bloco "MOVIMENTO" (animações). Tudo respeita `prefers-reduced-motion`.
+- `src/app/select.tsx`: lista suspensa própria (`<Select>` aceita `<option>` como filhos); não usar `<select>` nativo.
+- `src/app/reveal.ts`: `useReveal` revela `.metric/.panel/.filters/.notice` ao entrar na tela (atributo `data-rv`); gráficos animam só depois disso.
+- `src/app/login-fx.tsx` + `symbol.tsx`: marca em texto vetorial, fundo animado (orbes, anéis, feixe, poeira em canvas) e brilho do símbolo.
+- Fonte via `next/font` (Plus Jakarta Sans). Verificado por capturas headless do Edge apenas no login e em componentes isolados; as telas logadas não foram vistas em navegador.
+- `AGENTS.md` (gerado pelo `next dev`) avisa que esta versão do Next tem mudanças: consultar `node_modules/next/dist/docs/` antes de alterar convenções.
+
 ### Regras de negócio
 - Pendente → Aprovado/Rejeitado (aprovador/admin, diferente do criador; rejeição exige motivo) → Pago (somente aprovado). Decisão e baixa usam `UPDATE ... WHERE status = ...` (sem decisão dupla em concorrência).
 - Aprovado não edita. Pendente/rejeitado editam; editar rejeitado volta a pendente. Cancelar exige motivo, não vale para pago.
