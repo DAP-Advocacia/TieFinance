@@ -6,7 +6,7 @@ import { log } from "./audit";
 import type { SessionUser } from "./auth";
 import type { PaymentDTO } from "./types";
 
-const { payments, companies, payees, users, attachments } = schema;
+const { payments, companies, payees, users, attachments, bankAccounts } = schema;
 const creator = alias(users, "creator");
 const decider = alias(users, "decider");
 
@@ -20,12 +20,15 @@ function base(db: Db | Tx) {
       payeeInfo: payees.paymentInfo,
       creatorName: creator.name,
       deciderName: decider.name,
+      bankName: bankAccounts.bank,
+      bankNick: bankAccounts.nickname,
     })
     .from(payments)
     .innerJoin(companies, eq(companies.id, payments.companyId))
     .innerJoin(payees, eq(payees.id, payments.payeeId))
     .innerJoin(creator, eq(creator.id, payments.createdBy))
-    .leftJoin(decider, eq(decider.id, payments.decidedBy));
+    .leftJoin(decider, eq(decider.id, payments.decidedBy))
+    .leftJoin(bankAccounts, eq(bankAccounts.id, payments.bankAccountId));
 }
 type Row = Awaited<ReturnType<ReturnType<typeof base>["limit"]>>[number];
 
@@ -56,10 +59,12 @@ export function toDTO(r: Row, today = todaySP()): PaymentDTO {
     paid_via: p.paidVia,
     paid_ref: p.paidRef,
     overdue: p.status === "approved" && p.payDate < today,
+    bank_account_id: p.bankAccountId,
+    bank: r.bankName ? `${r.bankName} · ${r.bankNick}` : "",
   };
 }
 
-export type Filters = { status?: string; company_id?: string; q?: string; date_from?: string; date_to?: string };
+export type Filters = { status?: string; company_id?: string; bank_account_id?: string; q?: string; date_from?: string; date_to?: string };
 
 export async function listPayments(db: Db | Tx, f: Filters = {}): Promise<PaymentDTO[]> {
   const today = todaySP();
@@ -67,6 +72,7 @@ export async function listPayments(db: Db | Tx, f: Filters = {}): Promise<Paymen
   if (f.status === "overdue") cond.push(and(eq(payments.status, "approved"), lt(payments.payDate, today)));
   else if (f.status) cond.push(eq(payments.status, f.status));
   if (f.company_id) cond.push(eq(payments.companyId, f.company_id));
+  if (f.bank_account_id) cond.push(eq(payments.bankAccountId, f.bank_account_id));
   if (f.date_from) cond.push(gte(payments.payDate, parseDate(f.date_from)));
   if (f.date_to) cond.push(lte(payments.payDate, parseDate(f.date_to)));
   if (f.q) {
@@ -91,6 +97,7 @@ const snap = (p: PaymentDTO) => ({
   amount_cents: p.amount_cents,
   pay_date: p.pay_date,
   cost_center: p.cost_center,
+  bank: p.bank,
   status: p.status,
 });
 
@@ -106,6 +113,7 @@ async function saveUpload(tx: Tx, f: File | null): Promise<{ id: string; name: s
 
 export type PaymentForm = {
   company_id: string;
+  bank_account_id: string;
   payee_id: string;
   description: string;
   amount: string;
@@ -124,6 +132,7 @@ export function readForm(fd: FormData): PaymentForm {
   const f = fd.get("file");
   return {
     company_id: req("company_id"),
+    bank_account_id: req("bank_account_id"),
     payee_id: req("payee_id"),
     description: req("description").slice(0, 300),
     amount: req("amount"),
@@ -133,15 +142,19 @@ export function readForm(fd: FormData): PaymentForm {
   };
 }
 
-async function assertRefs(tx: Tx, companyId: string, payeeId: string) {
+async function assertRefs(tx: Tx, companyId: string, payeeId: string, bankId: string, currentBankId?: string | null) {
   const [c] = await tx.select({ id: companies.id }).from(companies).where(eq(companies.id, companyId)).limit(1);
   const [p] = await tx.select({ id: payees.id }).from(payees).where(eq(payees.id, payeeId)).limit(1);
   if (!c || !p) throw new HttpError(404, "CNPJ ou favorecido inexistente");
+  const [b] = await tx.select().from(bankAccounts).where(eq(bankAccounts.id, bankId)).limit(1);
+  if (!b) throw new HttpError(404, "Conta bancaria inexistente");
+  if (b.companyId !== companyId) throw new HttpError(422, "A conta bancaria nao pertence ao CNPJ pagador selecionado");
+  if (!b.active && b.id !== currentBankId) throw new HttpError(422, "Conta bancaria inativa");
 }
 
 export async function createPayment(user: SessionUser, f: PaymentForm): Promise<string> {
   return getDb().transaction(async (tx) => {
-    await assertRefs(tx, f.company_id, f.payee_id);
+    await assertRefs(tx, f.company_id, f.payee_id, f.bank_account_id);
     const cents = toCents(f.amount);
     const date = parseDate(f.pay_date);
     const att = await saveUpload(tx, f.file);
@@ -150,6 +163,7 @@ export async function createPayment(user: SessionUser, f: PaymentForm): Promise<
       id,
       companyId: f.company_id,
       payeeId: f.payee_id,
+      bankAccountId: f.bank_account_id,
       description: f.description,
       amountCents: cents,
       payDate: date,
@@ -170,7 +184,7 @@ export async function editPayment(user: SessionUser, id: string, f: PaymentForm)
     const cur = await getPayment(tx, id);
     if (!cur) throw new HttpError(404, "Agendamento nao encontrado");
     if (cur.status !== "pending" && cur.status !== "rejected") throw new HttpError(409, "Somente pendentes ou rejeitados podem ser editados");
-    await assertRefs(tx, f.company_id, f.payee_id);
+    await assertRefs(tx, f.company_id, f.payee_id, f.bank_account_id, cur.bank_account_id);
     const cents = toCents(f.amount);
     const date = parseDate(f.pay_date);
     const att = await saveUpload(tx, f.file);
@@ -179,6 +193,7 @@ export async function editPayment(user: SessionUser, id: string, f: PaymentForm)
       .set({
         companyId: f.company_id,
         payeeId: f.payee_id,
+        bankAccountId: f.bank_account_id,
         description: f.description,
         amountCents: cents,
         payDate: date,

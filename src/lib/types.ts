@@ -27,10 +27,13 @@ export type PaymentDTO = {
   paid_via: string | null;
   paid_ref: string | null;
   overdue: boolean;
+  bank_account_id: string | null;
+  bank: string;
 };
 
 export type AuditDTO = { id: number; ts: string | null; actor: string; action: string; entity: string; entity_id: string; detail: string };
 export type CompanyDTO = { id: string; name: string; cnpj: string; active: boolean };
+export type BankAccountDTO = { id: string; company_id: string; company: string; bank: string; kind: "extrato" | "api"; nickname: string; agency: string; account: string; active: boolean };
 export type PayeeDTO = { id: string; name: string; document: string; payment_info: string; active: boolean };
 export type UserDTO = { id: string; name: string; email: string; role: Role; active: boolean };
 
@@ -51,6 +54,7 @@ export type DashboardDTO = {
   monthly: { month: string; scheduled_cents: number; paid_cents: number }[];
   by_status: ({ status: Status } & Sum)[];
   by_company: Rank[];
+  by_bank: Rank[];
   by_cost_center: Rank[];
   top_payees: Rank[];
   aging: { a_vencer: number; "1_30": number; "31_60": number; "61_90": number; "90_mais": number };
@@ -69,3 +73,14 @@ export type ReconcileLine = {
   payment?: PaymentDTO;
   candidates?: PaymentDTO[];
 };
+
+/** Bancos/instituicoes suportados. "api" = integracao automatica prevista (por ora tambem aceita extrato exportado). */
+export const BANKS = [
+  { name: "Santander", kind: "extrato" },
+  { name: "Bradesco", kind: "extrato" },
+  { name: "Nubank", kind: "extrato" },
+  { name: "Asaas", kind: "api" },
+  { name: "Luna Pay", kind: "api" },
+  { name: "EFI Bank", kind: "api" },
+  { name: "Outro", kind: "extrato" },
+] as const;

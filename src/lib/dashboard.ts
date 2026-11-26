@@ -76,6 +76,7 @@ export async function getDashboard(user: SessionUser, companyId?: string): Promi
     monthly,
     by_status: (["pending", "approved", "paid", "rejected", "cancelled"] as Status[]).map((s) => ({ status: s, ...sum(by(s)) })),
     by_company: ranking(live, (p) => p.company),
+    by_bank: ranking(live, (p) => p.bank || "(sem conta)"),
     by_cost_center: ranking(live, (p) => p.cost_center),
     top_payees: ranking(live, (p) => p.payee),
     aging,

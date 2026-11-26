@@ -52,6 +52,7 @@ O admin inicial é criado no **primeiro login** com `ERP_ADMIN_EMAIL`, se a tabe
 
 - Schema completo: [`db/schema.sql`](db/schema.sql). Migrações incrementais em `db/migrations/` (aplicar na ordem; o projeto Supabase atual já tem 0001–0003).
 - RLS ligado **sem policies** em todas as tabelas: a API REST pública do Supabase não enxerga nada; só o app acessa, direto pelo Postgres.
+- Contas bancárias por CNPJ em `bank_accounts`; agendamentos e conciliação são por conta. Migrações 0001–0004.
 - Anexos ficam na tabela `attachments` (limite de 4 MB por arquivo, por causa do limite de corpo da Vercel).
 
 ## Dados fictícios
@@ -59,13 +60,13 @@ O admin inicial é criado no **primeiro login** com `ERP_ADMIN_EMAIL`, se a tabe
 
 ## Testes
 
-Teste de ponta a ponta da API contra um servidor rodando em um **banco/schema vazio**:
+Teste de ponta a ponta da API contra um servidor rodando em um **banco/schema vazio** (para ter um Postgres local descartável, veja `tools/local-db/` e a seção 8 do HANDOFF):
 
 ```bash
 npm run build && npm start &
 BASE_URL=http://127.0.0.1:3000 npm test
 ```
-O servidor precisa de `ERP_ADMIN_EMAIL=admin@teste.com` e `ERP_ADMIN_PASSWORD=SenhaAdmin#12345`. Cobre permissões, fluxo completo, autoaprovação, anexos, conciliação, dashboard, senha, exportações, auditoria e limite de login (20 grupos de verificação). **Nunca aponte para o schema `public` em produção.**
+O servidor precisa de `ERP_ADMIN_EMAIL=admin@teste.com` e `ERP_ADMIN_PASSWORD=SenhaAdmin#12345`. Cobre permissões, fluxo completo, autoaprovação, anexos, conciliação, dashboard, senha, exportações, auditoria e limite de login (21 grupos de verificação). **Nunca aponte para o schema `public` em produção.**
 
 ## Estrutura
 

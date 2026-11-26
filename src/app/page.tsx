@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CompanyDTO, PayeeDTO } from "@/lib/types";
+import type { BankAccountDTO, CompanyDTO, PayeeDTO } from "@/lib/types";
 import { RL, api, J } from "./client";
 import { Backdrop, Wordmark, useParallax } from "./login-fx";
 import { useReveal } from "./reveal";
@@ -89,17 +89,18 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [badge, setBadge] = useState(0);
   const [companies, setCompanies] = useState<CompanyDTO[]>([]);
   const [payees, setPayees] = useState<PayeeDTO[]>([]);
+  const [banks, setBanks] = useState<BankAccountDTO[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   useReveal(mainRef);
   const reloadRefs = useCallback(async () => {
-    const [c, p] = await Promise.all([J<CompanyDTO[]>("/companies"), J<PayeeDTO[]>("/payees")]);
-    setCompanies(c); setPayees(p);
+    const [c, p, b] = await Promise.all([J<CompanyDTO[]>("/companies"), J<PayeeDTO[]>("/payees"), J<BankAccountDTO[]>("/bank-accounts")]);
+    setCompanies(c); setPayees(p); setBanks(b);
   }, []);
   useEffect(() => { reloadRefs().catch((e) => toast(e.message)); }, [reloadRefs]); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = useCallback(() => setTick((x) => x + 1), []);
   const go = (t: string) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
-  const c: Ctx = { me, companies, payees, reloadRefs, go, refresh };
+  const c: Ctx = { me, companies, payees, banks, reloadRefs, go, refresh };
   const [h, s] = TITLES[tab];
   const canNew = (me.role === "financeiro" || me.role === "admin") && (tab === "dash" || tab === "pay");
   const chPw = async () => {

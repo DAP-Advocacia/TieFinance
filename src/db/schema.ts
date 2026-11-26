@@ -1,4 +1,4 @@
-import { bigint, boolean, customType, date, index, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, customType, date, index, integer, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Timestamps sao "timestamp without time zone" guardados em UTC; lidos como string 'YYYY-MM-DD HH:MM:SS[.fff]'.
 const ts = (name: string) => timestamp(name, { mode: "string" });
@@ -34,6 +34,17 @@ export const payees = pgTable("payees", {
   active: boolean("active").notNull(),
 });
 
+export const bankAccounts = pgTable("bank_accounts", {
+  id: varchar("id", { length: 32 }).primaryKey(),
+  companyId: varchar("company_id", { length: 32 }).notNull().references(() => companies.id),
+  bank: varchar("bank", { length: 60 }).notNull(),
+  kind: varchar("kind", { length: 10 }).notNull(),
+  nickname: varchar("nickname", { length: 80 }).notNull(),
+  agency: varchar("agency", { length: 20 }).notNull(),
+  account: varchar("account", { length: 30 }).notNull(),
+  active: boolean("active").notNull(),
+});
+
 export const payments = pgTable("payments", {
   id: varchar("id", { length: 32 }).primaryKey(),
   companyId: varchar("company_id", { length: 32 }).notNull().references(() => companies.id),
@@ -53,6 +64,18 @@ export const payments = pgTable("payments", {
   paidDate: date("paid_date", { mode: "string" }),
   paidVia: varchar("paid_via", { length: 12 }),
   paidRef: varchar("paid_ref", { length: 300 }),
+  bankAccountId: varchar("bank_account_id", { length: 32 }).references(() => bankAccounts.id),
+});
+
+export const statementImports = pgTable("statement_imports", {
+  id: serial("id").primaryKey(),
+  bankAccountId: varchar("bank_account_id", { length: 32 }).notNull().references(() => bankAccounts.id),
+  filename: varchar("filename", { length: 200 }).notNull(),
+  fileHash: varchar("file_hash", { length: 64 }).notNull(),
+  importedBy: varchar("imported_by", { length: 32 }).references(() => users.id),
+  importedAt: ts("imported_at").notNull(),
+  lines: integer("lines").notNull(),
+  paid: integer("paid").notNull(),
 });
 
 export const attachments = pgTable("attachments", {

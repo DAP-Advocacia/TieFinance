@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
+import { and, desc, eq } from "drizzle-orm";
 import { readSheet } from "read-excel-file/node";
-import { getDb } from "@/db";
-import { HttpError, MAX_UPLOAD, diffDays, parseDate } from "./core";
+import { getDb, schema } from "@/db";
+import { HttpError, MAX_UPLOAD, diffDays, nowUtc, parseDate, toIso } from "./core";
 import { log } from "./audit";
 import { getPayment, listPayments, markPaid } from "./payments";
 import type { SessionUser } from "./auth";
@@ -120,13 +122,34 @@ export async function readStatement(name: string, buf: Buffer): Promise<StmtLine
   return out;
 }
 
-export async function previewStatement(user: SessionUser, file: File) {
+async function loadAccount(bankAccountId: string) {
+  const [acc] = await getDb()
+    .select({ id: schema.bankAccounts.id, bank: schema.bankAccounts.bank, kind: schema.bankAccounts.kind, nickname: schema.bankAccounts.nickname, company: schema.companies.name, active: schema.bankAccounts.active })
+    .from(schema.bankAccounts)
+    .innerJoin(schema.companies, eq(schema.companies.id, schema.bankAccounts.companyId))
+    .where(eq(schema.bankAccounts.id, bankAccountId))
+    .limit(1);
+  if (!acc) throw new HttpError(404, "Conta bancaria inexistente");
+  return acc;
+}
+
+export async function previewStatement(user: SessionUser, file: File, bankAccountId: string) {
   if (file.size > MAX_UPLOAD) throw new HttpError(422, "Arquivo acima de 4 MB");
-  const lines = await readStatement(file.name, Buffer.from(await file.arrayBuffer()));
+  const account = await loadAccount(bankAccountId);
+  const raw = Buffer.from(await file.arrayBuffer());
+  const fileHash = createHash("sha256").update(raw).digest("hex");
+  const lines = await readStatement(file.name, raw);
   const db = getDb();
+  const [dup] = await db
+    .select({ at: schema.statementImports.importedAt, name: schema.statementImports.filename })
+    .from(schema.statementImports)
+    .where(and(eq(schema.statementImports.bankAccountId, bankAccountId), eq(schema.statementImports.fileHash, fileHash)))
+    .orderBy(desc(schema.statementImports.id))
+    .limit(1);
   const valid = lines.filter((l) => !l.error);
   const hasDebits = valid.some((l) => l.cents! < 0);
-  const approved = await listPayments(db, { status: "approved" });
+  // so concilia com pagamentos agendados NESTA conta bancaria
+  const approved = await listPayments(db, { status: "approved", bank_account_id: bankAccountId });
   const tol = TOLERANCE();
   const claimed = new Map<string, number>();
   const result: ReconcileLine[] = [];
@@ -157,22 +180,32 @@ export async function previewStatement(user: SessionUser, file: File) {
     } else if (cands.length >= 1) {
       result.push({ ...r2, result: "ambiguous", note: "Mais de um candidato ou ja usado em outra linha", candidates: cands });
     } else {
-      result.push({ ...r2, result: "unmatched", note: "Nenhum agendamento aprovado correspondente" });
+      result.push({ ...r2, result: "unmatched", note: "Nenhum agendamento aprovado correspondente nesta conta" });
     }
   }
-  await log(db, user, "reconcile.preview", "statement", "", { file: file.name, lines: lines.length, matches: claimed.size });
-  return { lines: result, tolerance_days: tol };
+  await log(db, user, "reconcile.preview", "statement", bankAccountId, { file: file.name, lines: lines.length, matches: claimed.size, duplicate: !!dup });
+  return {
+    lines: result,
+    tolerance_days: tol,
+    account: { id: account.id, bank: account.bank, kind: account.kind, nickname: account.nickname, company: account.company },
+    file_hash: fileHash,
+    total_lines: lines.length,
+    duplicate_of: dup ? { at: toIso(dup.at), filename: dup.name } : null,
+  };
 }
 
-export async function confirmReconcile(user: SessionUser, items: { payment_id: string; paid_date: string; ref: string }[], file: string) {
+export async function confirmReconcile(user: SessionUser, items: { payment_id: string; paid_date: string; ref: string }[], file: string, bankAccountId: string, fileHash: string, totalLines: number) {
+  const account = await loadAccount(bankAccountId);
   const db = getDb();
   const paid: string[] = [];
   const errors: { id: string; error: string }[] = [];
   for (const it of items) {
     try {
       await db.transaction(async (tx) => {
-        if (!(await getPayment(tx, it.payment_id))) throw new HttpError(404, "Agendamento nao encontrado");
-        await markPaid(tx, user, it.payment_id, parseDate(it.paid_date), "extrato", `${file} ${it.ref}`.trim().slice(0, 300));
+        const p = await getPayment(tx, it.payment_id);
+        if (!p) throw new HttpError(404, "Agendamento nao encontrado");
+        if (p.bank_account_id !== bankAccountId) throw new HttpError(409, "Agendamento pertence a outra conta bancaria");
+        await markPaid(tx, user, it.payment_id, parseDate(it.paid_date), "extrato", `${account.bank} ${file} ${it.ref}`.trim().slice(0, 300));
       });
       paid.push(it.payment_id);
     } catch (e) {
@@ -180,6 +213,7 @@ export async function confirmReconcile(user: SessionUser, items: { payment_id: s
       errors.push({ id: it.payment_id, error: e.detail });
     }
   }
-  await log(db, user, "reconcile.confirm", "statement", "", { file, paid: paid.length, errors: errors.length });
+  if (paid.length) await db.insert(schema.statementImports).values({ bankAccountId, filename: file.slice(0, 200), fileHash, importedBy: user.id, importedAt: nowUtc(), lines: totalLines || items.length, paid: paid.length });
+  await log(db, user, "reconcile.confirm", "statement", bankAccountId, { bank: account.bank, file, paid: paid.length, errors: errors.length });
   return { paid, errors };
 }

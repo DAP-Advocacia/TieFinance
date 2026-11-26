@@ -8,6 +8,7 @@ export const GET = route("any", async ({ req }) => {
   return listPayments(getDb(), {
     status: sp.get("status") ?? "",
     company_id: sp.get("company_id") ?? "",
+    bank_account_id: sp.get("bank_account_id") ?? "",
     q: sp.get("q") ?? "",
     date_from: sp.get("date_from") ?? "",
     date_to: sp.get("date_to") ?? "",

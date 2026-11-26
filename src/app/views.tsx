@@ -1,12 +1,14 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { AuditDTO, CompanyDTO, DashboardDTO, PayeeDTO, PaymentDTO, ReconcileLine, Role, UserDTO } from "@/lib/types";
+import type { AuditDTO, BankAccountDTO, CompanyDTO, DashboardDTO, PayeeDTO, PaymentDTO, ReconcileLine, Role, UserDTO } from "@/lib/types";
 import { RL, ST, api, brl, dd, dt, download, J, todayLocal } from "./client";
+import { BANKS } from "@/lib/types";
 import { Select } from "./select";
 import { AgingChart, BarChart, Donut, HBars, Metric, Metrics, Modal, Panel, PaymentsTable, WeekChart, useToast, type RowActions } from "./ui";
 
+const BANK_NAMES = BANKS.map((b) => b.name);
 export type Me = { id: string; name: string; email: string; role: Role };
-export type Ctx = { me: Me; companies: CompanyDTO[]; payees: PayeeDTO[]; reloadRefs: () => Promise<void>; go: (t: string) => void; refresh: () => void };
+export type Ctx = { me: Me; companies: CompanyDTO[]; payees: PayeeDTO[]; banks: BankAccountDTO[]; reloadRefs: () => Promise<void>; go: (t: string) => void; refresh: () => void };
 
 const can = (me: Me, ...r: Role[]) => r.includes(me.role);
 
@@ -32,6 +34,8 @@ function useRowActions(c: Ctx, onDone: () => void, onEdit: (id: string) => void)
 export function PaymentFormModal({ c, editId, open, onClose, onSaved }: { c: Ctx; editId: string | null; open: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [p, setP] = useState<PaymentDTO | null>(null);
+  const [co, setCo] = useState<string | null>(null);
+  useEffect(() => { setCo(null); }, [open, editId]);
   useEffect(() => {
     setP(null);
     if (open && editId) J<PaymentDTO[]>("/payments").then((l) => setP(l.find((x) => x.id === editId) ?? null)).catch((e) => toast(e.message));
@@ -48,13 +52,16 @@ export function PaymentFormModal({ c, editId, open, onClose, onSaved }: { c: Ctx
   };
   if (editId && !p) return <Modal open={open} onClose={onClose}><p className="small">Carregando…</p></Modal>;
   const active = <T extends { id: string; active: boolean }>(a: T[], keep?: string) => a.filter((x) => x.active || x.id === keep);
+  const coId = co ?? p?.company_id ?? active(c.companies)[0]?.id ?? "";
+  const accs = active(c.banks.filter((b) => b.company_id === coId), p?.bank_account_id ?? undefined);
   return (
     <Modal open={open} onClose={onClose}>
       <h2>{p ? "Editar agendamento" : "Novo agendamento"}</h2>
       {p?.reason && <div className="notice">Rejeitado: {p.reason}. Ao salvar, volta para aprovação.</div>}
       <form onSubmit={save}>
         <div className="fg">
-          <label>CNPJ pagador<Select name="company_id" defaultValue={p?.company_id}>{active(c.companies, p?.company_id).map((x) => <option key={x.id} value={x.id}>{x.name}{x.cnpj ? " · " + x.cnpj : ""}</option>)}</Select></label>
+          <label>CNPJ pagador<Select name="company_id" value={coId} onChange={setCo}>{active(c.companies, p?.company_id).map((x) => <option key={x.id} value={x.id}>{x.name}{x.cnpj ? " · " + x.cnpj : ""}</option>)}</Select></label>
+          <label>Conta bancária<Select key={coId} name="bank_account_id" defaultValue={p?.company_id === coId ? (p?.bank_account_id ?? undefined) : undefined}>{accs.map((b) => <option key={b.id} value={b.id}>{b.bank} · {b.nickname}</option>)}</Select>{!accs.length && <span className="small" style={{ color: "var(--err)" }}>Este CNPJ não tem conta bancária. Cadastre em Administração.</span>}</label>
           <label>Favorecido<Select name="payee_id" defaultValue={p?.payee_id}>{active(c.payees, p?.payee_id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
           <label>Valor (R$)<input name="amount" required placeholder="1500.00" defaultValue={p ? (p.amount_cents / 100).toFixed(2) : ""} /></label>
           <label>Data do pagamento<input type="date" name="pay_date" required defaultValue={p?.pay_date} /></label>
@@ -62,7 +69,7 @@ export function PaymentFormModal({ c, editId, open, onClose, onSaved }: { c: Ctx
           <label>Centro de custos<input name="cost_center" defaultValue={p?.cost_center} /></label>
           <label>Anexo (PDF, PNG, JPG · até 4 MB)<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" /></label>
         </div>
-        <div className="actions"><button className="primary">{p ? "Salvar e reenviar" : "Agendar"}</button><button type="button" className="secondary" onClick={onClose}>Fechar</button></div>
+        <div className="actions"><button className="primary" disabled={!accs.length}>{p ? "Salvar e reenviar" : "Agendar"}</button><button type="button" className="secondary" onClick={onClose}>Fechar</button></div>
       </form>
     </Modal>
   );
@@ -114,8 +121,9 @@ export function Dashboard({ c, tick, onBadge }: { c: Ctx; tick: number; onBadge:
         <Panel title="Saídas previstas — próximas 8 semanas" sub="Pendentes + aprovados ainda não pagos, por semana"><WeekChart w={d.weeks} /></Panel>
         <Panel title="Aging dos aprovados em aberto" sub="Atraso em relação à data agendada"><AgingChart a={d.aging} /></Panel>
       </div>
-      <div className="grid3" style={{ marginTop: 16 }}>
+      <div className="gridA" style={{ marginTop: 16 }}>
         <Panel title="Por CNPJ pagador" sub="Total comprometido"><HBars list={d.by_company} /></Panel>
+        <Panel title="Por conta bancária" sub="Total comprometido"><HBars list={d.by_bank} color="var(--ouro)" /></Panel>
         <Panel title="Por centro de custos" sub="Total comprometido"><HBars list={d.by_cost_center} color="var(--brand)" /></Panel>
         <Panel title="Maiores favorecidos" sub="Total comprometido"><HBars list={d.top_payees} color="var(--ok)" /></Panel>
       </div>
@@ -133,7 +141,7 @@ export function Dashboard({ c, tick, onBadge }: { c: Ctx; tick: number; onBadge:
 /* ---------- agendamentos ---------- */
 export function PaymentsView({ c, tick }: { c: Ctx; tick: number }) {
   const toast = useToast();
-  const [f, setF] = useState({ status: "", company_id: "", date_from: "", date_to: "", q: "" });
+  const [f, setF] = useState({ status: "", company_id: "", bank_account_id: "", date_from: "", date_to: "", q: "" });
   const [list, setList] = useState<PaymentDTO[]>([]);
   const [edit, setEdit] = useState<string | null>(null);
   const qs = () => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
@@ -148,6 +156,7 @@ export function PaymentsView({ c, tick }: { c: Ctx; tick: number }) {
       <div className="filters">
         <label>Situação<Select value={f.status} onChange={setS("status")}><option value="">Todas</option>{Object.entries(ST).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></label>
         <label>CNPJ pagador<Select value={f.company_id} onChange={setS("company_id")}><option value="">Todos</option>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
+        <label>Conta bancária<Select value={f.bank_account_id} onChange={setS("bank_account_id")}><option value="">Todas</option>{c.banks.map((b) => <option key={b.id} value={b.id}>{b.bank} · {b.nickname}</option>)}</Select></label>
         <label>De<input type="date" value={f.date_from} onChange={set("date_from")} /></label>
         <label>Até<input type="date" value={f.date_to} onChange={set("date_to")} /></label>
         <label>Busca<input value={f.q} onChange={set("q")} placeholder="favorecido ou descrição" /></label>
@@ -230,34 +239,45 @@ export function PayeesView({ c }: { c: Ctx }) {
 const RES: Record<string, [string, string]> = { match: ["Conciliado", "good"], ambiguous: ["Ambíguo", "warn"], unmatched: ["Sem agendamento", "bad"], error: ["Erro", "bad"], ignored: ["Ignorado", ""] };
 export function ReconcileView({ c }: { c: Ctx }) {
   const toast = useToast();
+  const accounts = c.banks.filter((b) => b.active);
+  const [acc, setAcc] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [rc, setRc] = useState<{ lines: ReconcileLine[]; file: string } | null>(null);
+  type Preview = { lines: ReconcileLine[]; file: string; file_hash: string; total_lines: number; account: { id: string; bank: string; kind: string; nickname: string; company: string }; duplicate_of: { at: string | null; filename: string } | null };
+  const [rc, setRc] = useState<Preview | null>(null);
+  const sel = accounts.find((b) => b.id === (acc || accounts[0]?.id));
   const prev = async () => {
+    if (!sel) return toast("Cadastre uma conta bancária em Administração");
     if (!file) return toast("Escolha o arquivo");
-    const fd = new FormData(); fd.append("file", file);
-    try { const r = await J<{ lines: ReconcileLine[] }>("/reconcile/preview", { method: "POST", body: fd }); setRc({ ...r, file: file.name }); } catch (e) { toast((e as Error).message); }
+    const fd = new FormData(); fd.append("file", file); fd.append("bank_account_id", sel.id);
+    try { const r = await J<Omit<Preview, "file">>("/reconcile/preview", { method: "POST", body: fd }); setRc({ ...r, file: file.name }); } catch (e) { toast((e as Error).message); }
   };
   const ok = async () => {
     if (!rc) return;
     const items = rc.lines.filter((l) => l.result === "match").map((l) => ({ payment_id: l.payment!.id, paid_date: l.date!, ref: "linha " + l.line }));
-    if (!confirm(`Marcar ${items.length} agendamento(s) como pagos?`)) return;
+    if (!confirm(`Marcar ${items.length} agendamento(s) como pagos na conta ${rc.account.bank} · ${rc.account.nickname}?`)) return;
     try {
-      const r = await J<{ paid: string[]; errors: unknown[] }>("/reconcile/confirm", { method: "POST", json: { items, file: rc.file } });
+      const r = await J<{ paid: string[]; errors: unknown[] }>("/reconcile/confirm", { method: "POST", json: { items, file: rc.file, bank_account_id: rc.account.id, file_hash: rc.file_hash, total_lines: rc.total_lines } });
       toast(`${r.paid.length} baixados` + (r.errors.length ? `, ${r.errors.length} erros` : "")); setRc(null); c.refresh();
     } catch (e) { toast((e as Error).message); }
   };
   const n = (k: string) => rc?.lines.filter((l) => l.result === k).length ?? 0;
   return (
     <Panel title="Enviar extrato" sub="CSV ou XLSX com colunas Data, Descrição e Valor (até 4 MB)">
-      <div className="notice">Saídas são cruzadas com agendamentos <b>aprovados</b> por valor exato, data (±3 dias) e nome do favorecido. Nada é baixado até você confirmar.</div>
-      <div className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }}>
-        <input type="file" accept=".csv,.xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /><button className="primary" onClick={prev}>Analisar extrato</button>
-      </div>
+      <div className="notice">O extrato é cruzado apenas com agendamentos <b>aprovados nesta conta bancária</b>, por valor exato, data (±3 dias) e nome do favorecido. Nada é baixado até você confirmar.</div>
+      {sel?.kind === "api" && <div className="notice">{sel.bank}: a integração automática está em desenvolvimento. Por enquanto, exporte o extrato no painel do {sel.bank} e envie aqui.</div>}
+      {!accounts.length ? <p className="small">Nenhuma conta bancária cadastrada. Peça ao administrador para cadastrar em Administração → Contas bancárias.</p> : (
+        <div className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }}>
+          <label>Conta bancária do extrato<Select value={sel?.id ?? ""} onChange={(v) => { setAcc(v); setRc(null); }}>{accounts.map((b) => <option key={b.id} value={b.id}>{b.bank} · {b.company} · {b.nickname}</option>)}</Select></label>
+          <label>Arquivo<input type="file" accept=".csv,.xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
+          <button className="primary" onClick={prev}>Analisar extrato</button>
+        </div>
+      )}
       {rc && (
         <>
+          {rc.duplicate_of && <div className="notice" style={{ marginTop: 14 }}>Este mesmo arquivo já foi confirmado nesta conta{rc.duplicate_of.at ? ` em ${dt(rc.duplicate_of.at)}` : ""}. Agendamentos já pagos não são baixados de novo.</div>}
           <div style={{ marginTop: 14 }}>
             <Metrics>
-              <Metric label="Linhas" value={rc.lines.length} sub="no extrato" />
+              <Metric label="Linhas" value={rc.lines.length} sub={`${rc.account.bank} · ${rc.account.nickname}`} />
               <Metric label="Conciliáveis" value={n("match")} sub="prontos para baixa" tone="green" />
               <Metric label="Ambíguos / sem par" value={n("ambiguous") + n("unmatched")} sub="revisar manualmente" tone="amber" />
               <Metric label="Ignorados / erro" value={n("ignored") + n("error")} sub="entradas ou linhas ilegíveis" />
@@ -284,7 +304,6 @@ export function ReconcileView({ c }: { c: Ctx }) {
   );
 }
 
-/* ---------- auditoria ---------- */
 export function AuditView() {
   const toast = useToast();
   const [action, setAction] = useState("");
@@ -330,6 +349,28 @@ export function AdminView({ c }: { c: Ctx }) {
           <label>Nome<input name="name" required /></label><label>CNPJ<input name="cnpj" /></label><button className="primary">Adicionar</button>
         </form>
         <ul>{c.companies.map((x) => <li key={x.id}>{x.name} · {x.cnpj}</li>)}</ul>
+      </Panel>
+      <Panel title="Contas bancárias" sub="Bancos de cada CNPJ pagador. Asaas, Luna Pay e EFI Bank terão integração automática; Santander, Bradesco e Nubank funcionam por extrato exportado.">
+        {c.companies.length === 0 ? <p className="small">Cadastre um CNPJ pagador primeiro.</p> : (
+          <form className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }} onSubmit={submit("/bank-accounts", c.reloadRefs)}>
+            <label>CNPJ pagador<Select name="company_id" defaultValue={c.companies[0]?.id}>{c.companies.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></label>
+            <label>Banco<Select name="bank" defaultValue="Santander">{BANK_NAMES.map((b) => <option key={b} value={b}>{b}</option>)}</Select></label>
+            <label>Apelido<input name="nickname" placeholder="Conta principal" /></label>
+            <label>Agência<input name="agency" style={{ width: 90 }} /></label>
+            <label>Conta<input name="account" style={{ width: 130 }} /></label>
+            <button className="primary">Adicionar</button>
+          </form>
+        )}
+        <div className="tw"><table><thead><tr><th>CNPJ pagador</th><th>Banco</th><th>Apelido</th><th>Agência / conta</th><th>Conciliação</th><th></th></tr></thead>
+          <tbody>
+            {c.banks.map((b) => (
+              <tr key={b.id}>
+                <td>{b.company}</td><td>{b.bank}</td><td>{b.nickname}{!b.active && <> <span className="pill bad">inativa</span></>}</td><td>{[b.agency, b.account].filter(Boolean).join(" / ")}</td>
+                <td><span className={`pill ${b.kind === "api" ? "info" : ""}`}>{b.kind === "api" ? "Integração (em breve) + extrato" : "Extrato exportado"}</span></td>
+                <td><button className="secondary sm" onClick={() => act(async () => { await J(`/bank-accounts/${b.id}/active`, { method: "POST", json: { active: !b.active } }); await c.reloadRefs(); })}>{b.active ? "Desativar" : "Reativar"}</button></td>
+              </tr>
+            ))}
+          </tbody></table></div>
       </Panel>
       <Panel title="Usuários">
         <form className="filters" style={{ border: 0, padding: 0, boxShadow: "none" }} onSubmit={submit("/users")}>

@@ -11,5 +11,7 @@ export const POST = route(["auditoria", "admin"], async ({ req, user }) => {
   }
   const f = fd.get("file");
   if (!(f instanceof File)) throw new HttpError(422, "Envie o arquivo do extrato");
-  return previewStatement(user, f);
+  const bank = String(fd.get("bank_account_id") ?? "");
+  if (!bank) throw new HttpError(422, "Selecione a conta bancaria do extrato");
+  return previewStatement(user, f, bank);
 });

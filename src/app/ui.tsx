@@ -193,7 +193,7 @@ export function PaymentsTable({ list, a, selectable, selected, onSelect }: { lis
             <tr key={p.id}>
               {selectable && <td><input type="checkbox" disabled={mine(p)} title={mine(p) ? "Você criou este agendamento" : undefined} checked={!!selected?.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} /></td>}
               <td>{dd(p.pay_date)}</td>
-              <td>{p.company}</td>
+              <td>{p.company}<div className="small">{p.bank}</div></td>
               <td>{p.payee}<div className="small">{p.payee_info}</div></td>
               <td>{p.description}<div className="small">{p.cost_center} · por {p.created_by}</div></td>
               <td className="n"><b>{brl(p.amount_cents)}</b></td>

@@ -32,9 +32,10 @@ async function login(email, pw) {
 const status = async (p) => (await p).status;
 const j = async (p) => (await p).json();
 
+let BANK = ""; // conta bancaria padrao dos agendamentos (definida depois de criar o CNPJ)
 function payForm(co, py, amount, date, desc = "Material", withFile = true) {
   const f = new FormData();
-  f.set("company_id", co); f.set("payee_id", py); f.set("description", desc); f.set("amount", amount); f.set("pay_date", date);
+  f.set("company_id", co); if (BANK) f.set("bank_account_id", BANK); f.set("payee_id", py); f.set("description", desc); f.set("amount", amount); f.set("pay_date", date);
   if (withFile) f.set("file", new File([new TextEncoder().encode("%PDF-1.4 x")], "boleto.pdf", { type: "application/pdf" }));
   return f;
 }
@@ -62,10 +63,25 @@ assert.equal(await status(adm.post("/users", { name: "x", email: "mariana@t.com"
 assert.equal(await status(adm.post("/users", { name: "x", email: "y@t.com", password: PW, role: "root" })), 422);
 ok("criar usuarios + validacoes");
 const co = (await j(adm.post("/companies", { name: "DAP Advocacia", cnpj: "00.000.000/0001-00" }))).id;
+// --- contas bancarias ---
+assert.equal(await status(adm.post("/bank-accounts", { company_id: co, bank: "Banco Inexistente" })), 422);
+assert.equal(await status(adm.post("/bank-accounts", { company_id: "x".repeat(32), bank: "Santander" })), 404);
+BANK = (await j(adm.post("/bank-accounts", { company_id: co, bank: "Santander", nickname: "Conta principal", agency: "0001", account: "123-4" }))).id;
+const BANK2 = (await j(adm.post("/bank-accounts", { company_id: co, bank: "Asaas", nickname: "Asaas recebimentos" }))).id;
+const co2 = (await j(adm.post("/companies", { name: "DAP Consultoria", cnpj: "00.000.000/0002-00" }))).id;
+const BANK_OTHER = (await j(adm.post("/bank-accounts", { company_id: co2, bank: "Nubank" }))).id;
+{
+  const l = await j(adm.get("/bank-accounts"));
+  assert.equal(l.length, 3);
+  assert.equal(l.find((b) => b.id === BANK2).kind, "api");
+  assert.equal(l.find((b) => b.id === BANK).kind, "extrato");
+}
+ok("contas bancarias (criar, tipo api/extrato, validacoes)");
 const [mar, bru, thy] = await Promise.all(["mariana@t.com", "bruno@t.com", "thyago@t.com"].map((e) => login(e, PW)));
 
 // --- permissoes ---
 assert.equal(await status(mar.post("/companies", { name: "x" })), 403);
+assert.equal(await status(mar.post("/bank-accounts", { company_id: co, bank: "Bradesco" })), 403);
 assert.equal(await status(mar.get("/audit")), 403);
 const py = (await j(mar.post("/payees", { name: "Papelaria Central Ltda", document: "1", payment_info: "PIX x" }))).id;
 assert.equal(await status(thy.post("/payees", { name: "x" })), 403);
@@ -74,6 +90,12 @@ ok("permissoes por perfil");
 const mk = (amount, date, desc) => mar.req("POST", "/payments", { form: payForm(co, py, amount, date, desc) });
 assert.equal(await status(thy.req("POST", "/payments", { form: payForm(co, py, "1", "2026-12-01") })), 403);
 assert.equal(await status(mk("0", "2026-12-01")), 422);
+{
+  const noBank = payForm(co, py, "10", "2026-12-01", "x", false); noBank.delete("bank_account_id");
+  assert.equal(await status(mar.req("POST", "/payments", { form: noBank })), 422);
+  const wrong = payForm(co, py, "10", "2026-12-01", "x", false); wrong.set("bank_account_id", BANK_OTHER);
+  assert.equal(await status(mar.req("POST", "/payments", { form: wrong })), 422);
+}
 assert.equal(await status(mk("10.555", "2026-12-01")), 422);
 assert.equal(await status(mk("10", "2026-13-40")), 422);
 const p1 = (await j(mk("1500.00", "2026-12-10"))).id;
@@ -129,14 +151,28 @@ assert.equal(await status(mar.req("PUT", `/payments/${p1}`, { form: ed() })), 40
 
 // --- conciliacao ---
 const csv = "Data;Descricao;Valor\n10/12/2026;PIX ENVIADO PAPELARIA CENTRAL;-1.500,00\n11/12/2026;TARIFA;-15,90\n11/12/2026;PIX RECEBIDO CLIENTE;3.000,00\n";
-const stmt = (text, name = "e.csv") => { const f = new FormData(); f.set("file", new File([text], name)); return f; };
+const stmt = (text, name = "e.csv", bank = BANK) => { const f = new FormData(); f.set("file", new File([text], name)); if (bank) f.set("bank_account_id", bank); return f; };
 assert.equal(await status(mar.req("POST", "/reconcile/preview", { form: stmt(csv) })), 403);
+assert.equal(await status(thy.req("POST", "/reconcile/preview", { form: stmt(csv, "e.csv", "") })), 422);
+{
+  // extrato de OUTRA conta nao concilia pagamentos desta conta
+  const other = await j(thy.req("POST", "/reconcile/preview", { form: stmt(csv, "e.csv", BANK2) }));
+  assert.ok(!other.lines.some((l) => l.result === "match"));
+  assert.equal(other.account.kind, "api");
+}
 const pv = await j(thy.req("POST", "/reconcile/preview", { form: stmt(csv) }));
+assert.equal(pv.duplicate_of, null); assert.equal(pv.account.bank, "Santander"); assert.ok(pv.file_hash.length === 64);
 assert.deepEqual(pv.lines.map((l) => l.result), ["match", "unmatched", "ignored"]);
 const items = pv.lines.filter((l) => l.result === "match").map((l) => ({ payment_id: l.payment.id, paid_date: l.date, ref: `linha ${l.line}` }));
-const cf = await j(thy.post("/reconcile/confirm", { items, file: "e.csv" }));
+const wrongAcc = await j(thy.post("/reconcile/confirm", { items, file: "e.csv", bank_account_id: BANK2 }));
+assert.equal(wrongAcc.paid.length, 0); assert.equal(wrongAcc.errors.length, items.length);
+const cf = await j(thy.post("/reconcile/confirm", { items, file: "e.csv", bank_account_id: BANK, file_hash: pv.file_hash, total_lines: pv.total_lines }));
 assert.deepEqual(cf.paid, [p1]); assert.equal(cf.errors.length, 0);
-assert.equal((await j(thy.post("/reconcile/confirm", { items, file: "e.csv" }))).errors.length, 1);
+assert.equal((await j(thy.post("/reconcile/confirm", { items, file: "e.csv", bank_account_id: BANK }))).errors.length, 1);
+{
+  const again2 = await j(thy.req("POST", "/reconcile/preview", { form: stmt(csv) }));
+  assert.ok(again2.duplicate_of && again2.duplicate_of.filename === "e.csv"); // mesmo arquivo ja importado
+}
 ok("conciliacao por extrato (CSV) e baixa unica");
 assert.equal(await status(mar.post(`/payments/${p2}/pay`, {})), 200);
 assert.equal(await status(mar.post(`/payments/${p2}/cancel`, { reason: "teste" })), 409);
@@ -148,6 +184,7 @@ ok("baixa manual; pago nao cancela");
   assert.ok(d.kpis.paid_month.count + d.kpis.pending.count >= 1);
   assert.equal(d.monthly.length, 8); assert.equal(d.weeks.length, 8); assert.deepEqual(d.recent_audit, []);
   assert.ok(d.kpis.pending_for_me >= 0);
+  assert.ok(d.by_bank.length >= 1 && d.by_bank[0].name.includes("Santander"));
   assert.ok((await j(thy.get("/dashboard"))).recent_audit.length > 0);
   assert.equal(await status(bru.get("/payments?status=overdue")), 200);
   assert.ok((await j(bru.get("/pending-count"))).n >= 0);

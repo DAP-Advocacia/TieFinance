@@ -10,15 +10,17 @@ export const GET = route("any", async ({ req, user }) => {
   const list = await listPayments(db, {
     status: sp.get("status") ?? "",
     company_id: sp.get("company_id") ?? "",
+    bank_account_id: sp.get("bank_account_id") ?? "",
     q: sp.get("q") ?? "",
     date_from: sp.get("date_from") ?? "",
     date_to: sp.get("date_to") ?? "",
   });
   const rows: (string | number | null)[][] = [
-    ["CNPJ pagador", "CNPJ", "Favorecido", "Descricao", "Centro de custos", "Valor", "Data agendada", "Situacao", "Criado por", "Decidido por", "Motivo", "Data pagamento", "Forma baixa"],
+    ["CNPJ pagador", "CNPJ", "Conta bancaria", "Favorecido", "Descricao", "Centro de custos", "Valor", "Data agendada", "Situacao", "Criado por", "Decidido por", "Motivo", "Data pagamento", "Forma baixa"],
     ...list.map((p) => [
       p.company,
       p.cnpj,
+      p.bank,
       p.payee,
       p.description,
       p.cost_center,

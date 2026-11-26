@@ -1,4 +1,5 @@
 "use client";
+import { createPortal } from "react-dom";
 import { Children, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type Opt = { value: string; label: string; disabled?: boolean };
@@ -40,6 +41,8 @@ export function Select({ name, value, defaultValue, onChange, children, classNam
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const id = useId();
+  // onde o menu e montado (so valido depois do clique, ja no navegador)
+  const host = open && btn.current ? ((btn.current.closest("dialog") as HTMLElement | null) ?? document.body) : null;
 
   const place = useCallback(() => {
     const b = btn.current;
@@ -52,15 +55,6 @@ export function Select({ name, value, defaultValue, onChange, children, classNam
   }, []);
 
   useLayoutEffect(() => { if (open) place(); }, [open, place]);
-  // proteção: se algum ancestral transformado deslocar o menu "fixed", corrige pela diferença medida
-  useLayoutEffect(() => {
-    const l = list.current;
-    if (!open || !l) return;
-    const r = l.getBoundingClientRect();
-    const dl = r.left - pos.left;
-    const dt = (pos.up ? r.bottom : r.top) - pos.top;
-    if (Math.abs(dl) > 1 || Math.abs(dt) > 1) setPos((p) => ({ ...p, left: p.left - dl, top: p.top - dt }));
-  }, [open, pos.left, pos.top, pos.up]);
   useEffect(() => {
     if (!open) return;
     const down = (e: PointerEvent) => { const t = e.target as Node; if (!btn.current?.contains(t) && !list.current?.contains(t)) setOpen(false); };
@@ -106,7 +100,7 @@ export function Select({ name, value, defaultValue, onChange, children, classNam
         <span className="sel-val">{opts[selIdx]?.label ?? ""}</span>
         <svg className="sel-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 8 5 5 5-5" /></svg>
       </button>
-      {open && (
+      {open && host && createPortal(
         <ul ref={list} id={id} role="listbox" onClick={(e) => e.preventDefault()} className={`sel-pop ${pos.up ? "up" : ""}`}
           style={{ left: pos.left, top: pos.top, minWidth: pos.width, maxHeight: pos.maxH, transform: pos.up ? "translateY(-100%)" : undefined }}>
           {opts.map((o, i) => (
@@ -117,7 +111,8 @@ export function Select({ name, value, defaultValue, onChange, children, classNam
               {o.value === eff && <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4.5 10.5 3.5 3.5 7.5-8" /></svg>}
             </li>
           ))}
-        </ul>
+        </ul>,
+        host,
       )}
     </div>
   );

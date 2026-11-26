@@ -21,6 +21,12 @@ Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e f
 - **Gráficos** do dashboard em SVG/CSS puro, só com tokens (sem biblioteca).
 - Extrato: CSV (`;`/`,`, UTF-8/Latin-1) ou XLSX (`read-excel-file`). Exportações CSV e zip (`fflate`).
 
+### Contas bancárias e conciliação (2026-11-26)
+- Cada CNPJ pagador (`companies`) tem N contas (`bank_accounts`): Santander, Bradesco, Nubank, Asaas, Luna Pay, EFI Bank ou Outro. `kind`: `api` (Asaas/Luna Pay/EFI: integração automática **ainda não implementada**) ou `extrato` (arquivo exportado). Lista de bancos em `BANKS` (`src/lib/types.ts`).
+- O agendamento exige a conta (`payments.bank_account_id`) e ela precisa pertencer ao CNPJ pagador escolhido (validado no servidor). Pagamentos antigos podem ter `NULL`.
+- Conciliação: o Thyago escolhe a conta do extrato; o sistema só cruza com agendamentos **aprovados naquela conta** e só baixa os que pertencem a ela. Cada confirmação grava `statement_imports` (hash do arquivo): reenviar o mesmo arquivo avisa que já foi importado.
+- Dashboard e exportação CSV mostram/filtram por conta.
+
 ### Camada visual (resumo para quem for mexer)
 - `src/app/globals.css`: tokens no `:root` + bloco "MOVIMENTO" (animações). Tudo respeita `prefers-reduced-motion`.
 - `src/app/select.tsx`: lista suspensa própria (`<Select>` aceita `<option>` como filhos); não usar `<select>` nativo.
@@ -40,7 +46,8 @@ Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e f
 
 ## 3. Banco (Supabase)
 - Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, região sa-east-1). Tabelas no schema `public` com RLS ligado e sem policies; migrações 0001–0003 aplicadas.
-- Conteúdo atual: o admin `admin@dap.local`, um usuário `thyago@demo.local` (admin, criado manualmente) e os **dados fictícios** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs, 10 favorecidos e os usuários `demo-mariana@demo.local` e `demo-bruno@demo.local`). Para remover os dados demo, rode os `DELETE` comentados no fim de `tools/seed-demo.sql`.
+- Migrações aplicadas em produção: 0001–0004 (0004 = contas bancárias, em 2026-11-26).
+- Conteúdo atual: o admin `admin@dap.local`, um usuário `thyago@demo.local` (admin, criado manualmente) e os **dados fictícios** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs com 2 contas bancárias cada, 10 favorecidos e os usuários `demo-mariana@demo.local` e `demo-bruno@demo.local`). Para remover os dados demo, rode os `DELETE` comentados no fim de `tools/seed-demo.sql`.
 - Os schemas de teste `tf_test` e `tf_ts` já foram apagados.
 - O backup real é o do Supabase (a exportação do app é apenas para consulta).
 
@@ -67,3 +74,31 @@ Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e f
 - `tests/run.mjs` escreve dados fictícios: rode **apenas** em banco/schema vazio de teste (`DB_SCHEMA`), nunca no `public` de produção.
 - Edições de CSS: usar tokens (`var(--brand)` etc.); não introduzir hex solto.
 - Rollback: o código da v1 Python segue em `legacy-python/` (o Sprite e seus checkpoints não existem mais).
+
+## 7. Roadmap do plano do Thyago (menu completo do ERP)
+Menu planejado no ChatGPT do Thyago x situação:
+| Módulo | Situação |
+|---|---|
+| Contas a Pagar (agendamento, aprovação, fornecedores) | **Feito** (alçadas por valor: pendente) |
+| Conciliação Bancária | **Parcial**: upload de extrato por conta (Santander/Bradesco/Nubank). Falta integração API Asaas, Luna Pay, EFI (precisa de tokens/sandbox) |
+| Auditoria Interna | **Parcial**: trilha de eventos e exportação. Faltam validações/inconsistências automáticas |
+| Administração | **Parcial**: usuários, perfis fixos, CNPJs e contas. Faltam filiais e permissões granulares |
+| Dashboard Executivo | **Parcial**: indicadores de pagamentos; faltam receitas, saldos e EBITDA |
+| Contas a Receber | Não iniciado (honorários, manutenção, recebimentos, inadimplência) |
+| Tesouraria | Não iniciado (saldos por conta bancária, fluxo de caixa; usa `bank_accounts`) |
+| Controladoria | Não iniciado (DRE, DFC, EBITDA, centros de custos; exige plano de contas validado pelo contador) |
+| Orçamento Empresarial | Não iniciado (orçado x realizado) |
+| Comissionamento | Não iniciado (precisa das regras de comissão) |
+| Relatórios Gerenciais | Não iniciado (Excel e PDF) |
+Ordem sugerida: Contas a Receber → Tesouraria (saldos por conta) → integrações bancárias → Controladoria/Orçamento → Comissionamento → Relatórios.
+
+## 8. Ambiente de teste local
+`tools/local-db/` sobe um PostgreSQL descartável (pacote `embedded-postgres`, sem Docker e sem tocar na produção):
+```
+cd tools/local-db && npm install && node start.mjs          # imprime a DATABASE_URL local
+node newdb.mjs tf_fresh                                      # banco vazio com db/schema.sql
+# app: DATABASE_URL=... ERP_ADMIN_EMAIL=admin@teste.com ERP_ADMIN_PASSWORD=SenhaAdmin#12345 npm run build && npm start
+BASE_URL=http://127.0.0.1:3000 npm test                      # em banco VAZIO
+node seed.mjs                                                # opcional: dados demo (ver cabeçalho do arquivo)
+```
+Lição registrada: um ajuste em `select.tsx` (medição de posição + `setPos` em `useLayoutEffect`) causou "Maximum update depth" (React #185) e derrubava a tela ao abrir qualquer lista suspensa. Corrigido renderizando o menu em portal (no `<dialog>` se houver, senão no `<body>`). **Sempre abrir as telas no navegador após mexer em componentes de UI.**

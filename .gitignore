@@ -12,3 +12,6 @@ __pycache__/
 run.sh
 rp.tar.gz
 .claude/
+
+tools/local-db/node_modules/
+tools/local-db/.pgdata/

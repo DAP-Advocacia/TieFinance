@@ -1,0 +1,9 @@
+{
+  "name": "tiefinance-local-db",
+  "private": true,
+  "type": "module",
+  "description": "Postgres local descartavel para testes (nao e usado pela Vercel). Uso: npm install && node start.mjs",
+  "dependencies": {
+    "embedded-postgres": "latest"
+  }
+}

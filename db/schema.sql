@@ -1,5 +1,5 @@
--- Schema completo do TieFinance (equivale a migracoes 0001 + 0002 + 0003).
--- Use em um banco novo. O projeto Supabase atual ja possui 0001 e 0002; falta apenas aplicar db/migrations/0003_*.sql.
+-- Schema completo do TieFinance (equivale a migracoes 0001 a 0004).
+-- Use em um banco novo. O projeto Supabase atual ja possui 0001 e 0002; faltam as migracoes 0003 (feita) e 0004.
 -- RLS ligado sem policies: a API REST publica do Supabase nao enxerga nada; o app acessa direto pelo Postgres.
 
 CREATE TABLE IF NOT EXISTS users (
@@ -28,6 +28,18 @@ CREATE TABLE IF NOT EXISTS payees (
   payment_info VARCHAR(300) NOT NULL,
   active BOOLEAN NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id VARCHAR(32) PRIMARY KEY,
+  company_id VARCHAR(32) NOT NULL REFERENCES companies (id),
+  bank VARCHAR(60) NOT NULL,
+  kind VARCHAR(10) NOT NULL,            -- 'extrato' (arquivo exportado) | 'api' (Asaas, Luna Pay, EFI: integracao futura)
+  nickname VARCHAR(80) NOT NULL,
+  agency VARCHAR(20) NOT NULL,
+  account VARCHAR(30) NOT NULL,
+  active BOOLEAN NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_bank_accounts_company ON bank_accounts (company_id);
+
 CREATE TABLE IF NOT EXISTS payments (
   id VARCHAR(32) PRIMARY KEY,
   company_id VARCHAR(32) NOT NULL REFERENCES companies (id),
@@ -46,8 +58,23 @@ CREATE TABLE IF NOT EXISTS payments (
   reason VARCHAR(300),
   paid_date DATE,
   paid_via VARCHAR(12),
-  paid_ref VARCHAR(300)
+  paid_ref VARCHAR(300),
+  bank_account_id VARCHAR(32) REFERENCES bank_accounts (id)
 );
+CREATE INDEX IF NOT EXISTS ix_payments_bank ON payments (bank_account_id);
+CREATE TABLE IF NOT EXISTS statement_imports (
+  id SERIAL PRIMARY KEY,
+  bank_account_id VARCHAR(32) NOT NULL REFERENCES bank_accounts (id),
+  filename VARCHAR(200) NOT NULL,
+  file_hash VARCHAR(64) NOT NULL,
+  imported_by VARCHAR(32) REFERENCES users (id),
+  imported_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+  lines INTEGER NOT NULL,
+  paid INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_statement_imports_hash ON statement_imports (bank_account_id, file_hash);
+
+
 CREATE TABLE IF NOT EXISTS attachments (
   id VARCHAR(40) PRIMARY KEY,
   data BYTEA NOT NULL
@@ -79,3 +106,5 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE login_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE statement_imports ENABLE ROW LEVEL SECURITY;
