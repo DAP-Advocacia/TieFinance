@@ -1,104 +1,85 @@
 # HANDOFF — TieFinance
 
-Atualizado em 2026-11-26. Estado: **em produção na Vercel** (https://tie-finance.vercel.app, região `gru1`) com banco no Supabase (sa-east-1). A versão FastAPI/Sprite foi desligada. Há dados fictícios `[DEMO]` carregados; não usar com dados reais antes de fechar os itens de "Antes de dados reais".
+Atualizado em 2026-11-26. **Em produção** na Vercel (https://tie-finance.vercel.app, região `gru1`) com banco no Supabase (sa-east-1). Há dados fictícios `[DEMO]` carregados: não usar com dados reais antes de fechar "Antes de dados reais" (seção 6). O plano dos próximos módulos está em [PLANO.md](PLANO.md).
 
-## 1. Contexto
-Base: documentação ERP Finance v0.2 do Thyago (auditoria) em `docs/`. O PVP foi construído a partir dela, reduzido ao essencial:
+## 1. O que é e para quem
+Sistema web da **DAP Advocacia** para agendar pagamentos, aprovar e auditar, com dashboard analítico. Origem: documentação ERP Finance v0.2 do Thyago (auditoria), em `docs/`, planejada no ChatGPT. O código v0.2 original não existia; o PVP foi reconstruído a partir da especificação.
 
-- **Mariana** (financeiro) agenda pagamentos; **Dr. Bruno** (presidente/aprovador) aprova; **Thyago** (auditoria) audita e concilia por extrato.
-- Uma empresa (DAP Advocacia) com vários **CNPJs pagadores** (tabela `companies`).
-- Baixa: manual (Mariana) ou por upload de extrato (Thyago).
-- Notificação ao presidente: **em standby** por decisão do usuário.
+| Pessoa | Perfil | Papel |
+|---|---|---|
+| Mariana | `financeiro` | Agenda pagamentos, cadastra favorecidos, marca pago manual |
+| Dr. Bruno (presidente) | `aprovador` | Aprova/rejeita agendamentos (inclusive em lote) |
+| Thyago (auditoria) | `auditoria` | Concilia por extrato, trilha de auditoria, exportações |
+| Administrador | `admin` | Tudo (inclusive usuários, CNPJs, contas bancárias) |
 
-Histórico: v1 em FastAPI (hoje em `legacy-python/`) rodou no Fly.io Sprites e foi **desligada** (sprite destruído em 2026-11-26). A reescrita em Next.js foi para a Vercel, perto do banco (São Paulo), eliminando a latência (o Sprite ficava em Chicago: ~500 ms por requisição contra ~40 ms agora).
+Uma empresa (DAP Advocacia) com vários **CNPJs pagadores**, cada um com várias **contas bancárias**. Notificação ao presidente: **em standby** por decisão do usuário.
 
-## 2. Arquitetura
-- **Next.js 16 (App Router) + React 19 + TypeScript.** Telas em `src/app/` (client components); API em `src/app/api/**/route.ts` (route handlers).
-- `src/lib/http.ts`: `route(roles, fn)` envolve cada handler: checagem de origem (CSRF), autenticação por cookie, autorização por perfil e erros padronizados (`{detail}`).
-- **Auth:** senha scrypt (formato `salt_hex$hash_hex`, **compatível com o hash do Python**: o admin criado na v1 continua entrando). Token de sessão aleatório em cookie `HttpOnly; SameSite=Lax; Secure`; guarda-se o SHA-256 em `sessions`; expira em 8 h. Limite de 5 falhas/15 min **persistido na tabela `login_attempts`** (serverless não guarda memória).
-- **Dados:** Drizzle ORM sobre `postgres` (postgres.js), `prepare:false` (compatível com o pooler em modo transação). Valores em **centavos**; datas ISO; timestamps UTC sem fuso. Auditoria gravada na mesma transação da operação.
-- **Anexos** na tabela `attachments` (bytea), máx. 4 MB; servidos com `nosniff` e CSP `sandbox`.
-- **Gráficos** do dashboard em SVG/CSS puro, só com tokens (sem biblioteca).
-- Extrato: CSV (`;`/`,`, UTF-8/Latin-1) ou XLSX (`read-excel-file`). Exportações CSV e zip (`fflate`).
+## 2. Linha do tempo (o que foi feito)
+1. Leitura da documentação do Thyago e definição do recorte do PVP (agendamento → aprovação → baixa, com auditoria).
+2. **v1 em Python** (FastAPI + SQLAlchemy + SQLite): fluxo completo, conciliação por extrato CSV/XLSX, auditoria, testes. Publicada no Fly.io Sprites (Chicago).
+3. Melhorias na v1: troca de senha, exportação, Alembic, perfis editáveis, redesign com dashboard (visual do protótipo + tokens da marca), login com a identidade TieFinance (kit em `TieFinance_Kit/`).
+4. **Supabase** (Postgres em São Paulo): tabelas criadas via MCP, RLS ligado sem policies; anexos movidos para o banco (4 MB).
+5. Diagnóstico de lentidão (Chicago ↔ São Paulo, ~500 ms por requisição) → decisão de **migrar para Next.js na Vercel** (`gru1`). Reescrita completa (API + telas), mesmas regras, 20 grupos de teste em Postgres real.
+6. Deploy na Vercel; **Sprite desligado** (2026-11-26). Dados demo no Supabase.
+7. Camada visual: marca em texto vetorial nítido, fundo animado do login, transições de página, revelação ao rolar, gráficos animados, listas suspensas próprias.
+8. **Contas bancárias por CNPJ** (migração 0004): agendamento escolhe a conta, conciliação por conta, dashboard/exportação por conta, histórico de extratos importados. Postgres local descartável para testes (`tools/local-db/`). Correção de um erro grave que derrubava a tela ao abrir listas suspensas (React #185).
 
-### Contas bancárias e conciliação (2026-11-26)
-- Cada CNPJ pagador (`companies`) tem N contas (`bank_accounts`): Santander, Bradesco, Nubank, Asaas, Luna Pay, EFI Bank ou Outro. `kind`: `api` (Asaas/Luna Pay/EFI: integração automática **ainda não implementada**) ou `extrato` (arquivo exportado). Lista de bancos em `BANKS` (`src/lib/types.ts`).
-- O agendamento exige a conta (`payments.bank_account_id`) e ela precisa pertencer ao CNPJ pagador escolhido (validado no servidor). Pagamentos antigos podem ter `NULL`.
-- Conciliação: o Thyago escolhe a conta do extrato; o sistema só cruza com agendamentos **aprovados naquela conta** e só baixa os que pertencem a ela. Cada confirmação grava `statement_imports` (hash do arquivo): reenviar o mesmo arquivo avisa que já foi importado.
-- Dashboard e exportação CSV mostram/filtram por conta.
+Commits principais na `main`: `9926169` (v1) → `475d8b5` (Next.js) → `8f23a0a` (visual) → `60dd11d` (contas bancárias).
 
-### Camada visual (resumo para quem for mexer)
-- `src/app/globals.css`: tokens no `:root` + bloco "MOVIMENTO" (animações). Tudo respeita `prefers-reduced-motion`.
-- `src/app/select.tsx`: lista suspensa própria (`<Select>` aceita `<option>` como filhos); não usar `<select>` nativo.
-- `src/app/reveal.ts`: `useReveal` revela `.metric/.panel/.filters/.notice` ao entrar na tela (atributo `data-rv`); gráficos animam só depois disso.
-- `src/app/login-fx.tsx` + `symbol.tsx`: marca em texto vetorial, fundo animado (orbes, anéis, feixe, poeira em canvas) e brilho do símbolo.
-- Fonte via `next/font` (Plus Jakarta Sans). Verificado por capturas headless do Edge apenas no login e em componentes isolados; as telas logadas não foram vistas em navegador.
-- `AGENTS.md` (gerado pelo `next dev`) avisa que esta versão do Next tem mudanças: consultar `node_modules/next/dist/docs/` antes de alterar convenções.
+## 3. Arquitetura
+- **Next.js 16 (App Router) + React 19 + TypeScript.** Telas em `src/app/` (client components: `page.tsx`, `views.tsx`, `ui.tsx`, `select.tsx`, `reveal.ts`, `login-fx.tsx`, `symbol.tsx`); API em `src/app/api/**/route.ts`.
+- `src/lib/http.ts`: `route(roles, fn)` envolve cada handler: checagem de origem (CSRF), autenticação por cookie, autorização por perfil e erros `{detail}`.
+- **Auth:** senha scrypt (`salt_hex$hash_hex`, compatível com o hash do Python). Token aleatório em cookie `HttpOnly; SameSite=Lax; Secure`; guarda-se o SHA-256 em `sessions`; expira em 8 h. Limite de 5 falhas/15 min **persistido em `login_attempts`**.
+- **Dados:** Drizzle ORM sobre postgres.js, `prepare:false` (pooler em modo transação). Valores em **centavos**; datas ISO; timestamps UTC sem fuso. Auditoria na mesma transação da operação.
+- **Anexos** em `attachments` (bytea), máx. 4 MB (limite de corpo da Vercel); servidos com `nosniff` e CSP `sandbox`.
+- **Gráficos** em SVG/CSS puro com tokens. Extratos: CSV (`;`/`,`, UTF-8/Latin-1) ou XLSX. Exportações CSV e zip (`fflate`).
+- Estrutura: `src/lib/` (regras: `auth`, `payments`, `dashboard`, `reconcile`, `audit`, `core`, `types`), `src/db/` (Drizzle), `db/` (schema e migrações SQL), `tests/run.mjs`, `tools/`, `legacy-python/` (v1), `docs/`, `TieFinance_Kit/`.
 
 ### Regras de negócio
-- Pendente → Aprovado/Rejeitado (aprovador/admin, diferente do criador; rejeição exige motivo) → Pago (somente aprovado). Decisão e baixa usam `UPDATE ... WHERE status = ...` (sem decisão dupla em concorrência).
-- Aprovado não edita. Pendente/rejeitado editam; editar rejeitado volta a pendente. Cancelar exige motivo, não vale para pago.
-- Conciliação: cruza saídas com **aprovados** por valor exato + data ±3 dias + nome do favorecido; só baixa após confirmação; nunca baixa duas vezes.
-- Auditoria: login (e falha), CRUD, aprovação/rejeição, pagamento, conciliação, visualização de anexo, exportações, troca de perfil/senha.
+- Pendente → Aprovado/Rejeitado (aprovador/admin **diferente do criador**; rejeição exige motivo) → Pago (somente aprovado). Decisão/baixa usam `UPDATE … WHERE status = …` (sem decisão dupla).
+- Aprovado não edita. Pendente/rejeitado editam; editar rejeitado volta a pendente. Cancelar exige motivo; pago não cancela. "Atrasado" é derivado (aprovado com data vencida sem baixa).
+- **Conta bancária:** cada CNPJ tem N contas (`bank_accounts`: Santander, Bradesco, Nubank, Asaas, Luna Pay, EFI Bank, Outro). `kind` = `api` (Asaas/Luna Pay/EFI; integração automática **ainda não implementada**, hoje por extrato) ou `extrato`. O agendamento exige a conta e ela deve pertencer ao CNPJ (validado no servidor). Pagamentos antigos podem ter `NULL`.
+- **Conciliação:** o Thyago escolhe a conta do extrato; cruza saídas só com agendamentos **aprovados naquela conta** (valor exato + data ±3 dias + nome do favorecido); só baixa após confirmação e só pagamentos da conta; `statement_imports` guarda o hash do arquivo e avisa se o mesmo extrato for reenviado.
+- Auditoria: login (e falha), CRUD, aprovação/rejeição, pagamento, conciliação, anexo visto, exportações, troca de perfil/senha, contas bancárias.
 
 ### Endpoints
-`/api/login|logout|me`, `/api/me/password`, `/api/users` (+ `/[id]/role|password|active`), `/api/companies`, `/api/payees`, `/api/payments` (+ `/[id]`, `/approve`, `/reject`, `/cancel`, `/pay`, `/attachment`, `approve-batch`), `/api/dashboard`, `/api/pending-count`, `/api/reconcile/preview|confirm`, `/api/audit`, `/api/export/payments|audit`, `/api/backup` (exportação de dados).
+`/api/login|logout|me`, `/api/me/password`, `/api/users` (+ `/[id]/role|password|active`), `/api/companies`, `/api/bank-accounts` (+ `/[id]/active`), `/api/payees`, `/api/payments` (+ `/[id]`, `/approve`, `/reject`, `/cancel`, `/pay`, `/attachment`, `approve-batch`), `/api/dashboard`, `/api/pending-count`, `/api/reconcile/preview|confirm`, `/api/audit`, `/api/export/payments|audit`, `/api/backup` (exportação de dados).
 
-## 3. Banco (Supabase)
-- Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, região sa-east-1). Tabelas no schema `public` com RLS ligado e sem policies; migrações 0001–0003 aplicadas.
-- Migrações aplicadas em produção: 0001–0004 (0004 = contas bancárias, em 2026-11-26).
-- Conteúdo atual: o admin `admin@dap.local`, um usuário `thyago@demo.local` (admin, criado manualmente) e os **dados fictícios** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs com 2 contas bancárias cada, 10 favorecidos e os usuários `demo-mariana@demo.local` e `demo-bruno@demo.local`). Para remover os dados demo, rode os `DELETE` comentados no fim de `tools/seed-demo.sql`.
-- Os schemas de teste `tf_test` e `tf_ts` já foram apagados.
-- O backup real é o do Supabase (a exportação do app é apenas para consulta).
+### Camada visual
+- Tokens no `:root` de `src/app/globals.css` (azul `#08245d`, ouro `#d4af37`, Plus Jakarta Sans via `next/font`). Regras: só tokens (sem hex solto), ouro em no máximo 1–2 pontos por tela, estados em pares texto escuro/fundo suave, `tabular-nums` em valores. Tudo respeita `prefers-reduced-motion`.
+- `select.tsx`: lista suspensa própria (`<Select>` aceita `<option>`); **não usar `<select>` nativo**. O menu é renderizado em portal (dentro do `<dialog>` se houver, senão no `<body>`).
+- `reveal.ts` (`useReveal`): revela `.metric/.panel/.filters/.notice` ao entrar na tela; gráficos animam depois disso.
+- `login-fx.tsx` + `symbol.tsx`: marca em texto vetorial, fundo animado (orbes, anéis, feixe, poeira em canvas), brilho do símbolo.
+- `AGENTS.md` (gerado pelo `next dev`): esta versão do Next tem mudanças; consultar `node_modules/next/dist/docs/` antes de alterar convenções.
 
-## 4. Deploy (Vercel)
-- Projeto `tie-finance` importado de `DAP-Advocacia/TieFinance`, branch `main` (produção). `vercel.json` fixa `gru1`.
-- Variáveis (Production): `DATABASE_URL` (Transaction pooler do Supabase, porta 6543), `ERP_ADMIN_EMAIL`, `ERP_ADMIN_PASSWORD`.
-- Cada push na `main` gera um novo deploy. Rollback: *Deployments → Promote* de um deploy anterior, ou reverter o commit.
-- Limites do plano Hobby: funções 10 s, corpo 4,5 MB (anexo limitado a 4 MB). Se o dashboard ficar lento com muitos dados, mover agregações para SQL.
-- Medido em 2026-11-26: respostas leves 30–60 ms; login (toca o banco) 90–190 ms.
+## 4. Banco (Supabase)
+- Projeto **TieFinance** (`tcmiwjijrovoyspiurup`, sa-east-1). Schema `public`, RLS ligado **sem policies** (a API REST pública não enxerga nada; só o app acessa direto pelo Postgres). Migrações **0001–0004** aplicadas (`db/schema.sql` = banco novo completo; `db/migrations/` = incrementais).
+- Tabelas: `users, sessions, companies, bank_accounts, payees, payments, attachments, statement_imports, audit, login_attempts` (+ `alembic_version` herdada da v1, inofensiva).
+- Conteúdo: admin `admin@dap.local`; usuário `thyago@demo.local` (admin, criado à mão por terceiros); **dados demo** de `tools/seed-demo.sql` (60 agendamentos, 3 CNPJs × 2 contas, 10 favorecidos, `demo-mariana@demo.local` e `demo-bruno@demo.local`). Remoção: `DELETE`s comentados no fim do arquivo.
+- O backup real é o do Supabase (a "exportação de dados" do app é só para consulta).
 
-## 5. Pendências
-**Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP); trocar a senha do admin se ainda não foi trocada (a inicial circulou em chat); conferir backup/PITR do plano do Supabase; remover os dados demo e desativar os usuários `*@demo.local`.
-1. Extrato **real** do banco do Thyago para ajustar o leitor (hoje espera Data/Descrição/Valor; OFX não suportado).
-2. Validação visual em navegador: as telas foram verificadas por build, tipos e testes de API, **não** por teste de interface. Conferir o login animado, dashboard, formulários e o layout mobile.
-3. MFA e recuperação de senha por e-mail.
-4. Notificação ao presidente (e-mail/WhatsApp) — standby.
-5. Permissões granulares (alçada por valor, escopo por CNPJ) — hoje perfis fixos.
-6. Testes de interface (Playwright) e CI (GitHub Actions rodando `npm run build` + `tests/run.mjs` em schema isolado).
-7. Anexos acima de 4 MB: upload direto ao Supabase Storage.
-8. Roadmap v0.3+ (parcelas, competência, plano de contas, fluxo de caixa, DRE, orçamento) está em `docs/` e **não** faz parte do PVP.
+## 5. Deploy e operação
+- **Vercel:** projeto `tie-finance`, branch `main` (produção), `vercel.json` fixa `gru1`. Variáveis: `DATABASE_URL` (Transaction pooler, porta **6543**), `ERP_ADMIN_EMAIL`, `ERP_ADMIN_PASSWORD`. Cada push na `main` faz deploy. Rollback: *Deployments → Promote* ou reverter o commit. Hobby: funções 10 s, corpo 4,5 MB.
+- **Medido:** respostas leves 30–60 ms; login 90–190 ms (antes, no Sprite: ~500 ms).
+- **Teste local sem tocar em produção:** `tools/local-db/` sobe Postgres descartável (`embedded-postgres`, sem Docker):
+  ```
+  cd tools/local-db && npm install && node start.mjs     # imprime a DATABASE_URL local
+  node newdb.mjs tf_fresh                                 # banco vazio com db/schema.sql
+  # app: DATABASE_URL=... ERP_ADMIN_EMAIL=admin@teste.com ERP_ADMIN_PASSWORD=SenhaAdmin#12345 npm run build && npm start -- -p 3300
+  BASE_URL=http://127.0.0.1:3300 npm test                 # 21 grupos, em banco VAZIO
+  node seed.mjs                                           # opcional: dados demo
+  ```
+- **Capturas/verificação visual no Windows:** Edge headless via DevTools. Dica: **não usar `--disable-gpu`** ao capturar telas com `<dialog>`/animações (a captura trava); ver erros reais com `Runtime.exceptionThrown`.
 
-## 6. Cuidados
-- Nunca commitar `.env*`, senhas ou strings de conexão. `.env.example` só tem placeholders.
-- `tests/run.mjs` escreve dados fictícios: rode **apenas** em banco/schema vazio de teste (`DB_SCHEMA`), nunca no `public` de produção.
-- Edições de CSS: usar tokens (`var(--brand)` etc.); não introduzir hex solto.
-- Rollback: o código da v1 Python segue em `legacy-python/` (o Sprite e seus checkpoints não existem mais).
+## 6. Pendências e cuidados
+**Antes de dados reais:** política de dados do escritório (servidor fora da rede da DAP); trocar a senha do admin (a inicial circulou em chat); conferir backup/PITR do Supabase; remover dados demo e desativar usuários `*@demo.local` (senha demo conhecida no histórico); revisar o usuário `thyago@demo.local` (admin) que não foi criado por este projeto.
 
-## 7. Roadmap do plano do Thyago (menu completo do ERP)
-Menu planejado no ChatGPT do Thyago x situação:
-| Módulo | Situação |
-|---|---|
-| Contas a Pagar (agendamento, aprovação, fornecedores) | **Feito** (alçadas por valor: pendente) |
-| Conciliação Bancária | **Parcial**: upload de extrato por conta (Santander/Bradesco/Nubank). Falta integração API Asaas, Luna Pay, EFI (precisa de tokens/sandbox) |
-| Auditoria Interna | **Parcial**: trilha de eventos e exportação. Faltam validações/inconsistências automáticas |
-| Administração | **Parcial**: usuários, perfis fixos, CNPJs e contas. Faltam filiais e permissões granulares |
-| Dashboard Executivo | **Parcial**: indicadores de pagamentos; faltam receitas, saldos e EBITDA |
-| Contas a Receber | Não iniciado (honorários, manutenção, recebimentos, inadimplência) |
-| Tesouraria | Não iniciado (saldos por conta bancária, fluxo de caixa; usa `bank_accounts`) |
-| Controladoria | Não iniciado (DRE, DFC, EBITDA, centros de custos; exige plano de contas validado pelo contador) |
-| Orçamento Empresarial | Não iniciado (orçado x realizado) |
-| Comissionamento | Não iniciado (precisa das regras de comissão) |
-| Relatórios Gerenciais | Não iniciado (Excel e PDF) |
-Ordem sugerida: Contas a Receber → Tesouraria (saldos por conta) → integrações bancárias → Controladoria/Orçamento → Comissionamento → Relatórios.
+Cuidados:
+- Nunca commitar `.env*`, senhas ou strings de conexão. `tests/run.mjs` escreve dados: rodar **apenas** em banco vazio de teste, nunca no `public` de produção.
+- **Sempre abrir as telas logadas no navegador após mexer em UI.** Lição: um ajuste em `select.tsx` (medição + `setPos` em `useLayoutEffect`) causou "Maximum update depth" (React #185) e derrubava a tela ao abrir qualquer lista; ficou em produção até ser percebido. Build, tipos e testes de API **não** pegam isso.
+- Rollback da arquitetura: o código da v1 Python segue em `legacy-python/` (Sprite e checkpoints não existem mais).
 
-## 8. Ambiente de teste local
-`tools/local-db/` sobe um PostgreSQL descartável (pacote `embedded-postgres`, sem Docker e sem tocar na produção):
-```
-cd tools/local-db && npm install && node start.mjs          # imprime a DATABASE_URL local
-node newdb.mjs tf_fresh                                      # banco vazio com db/schema.sql
-# app: DATABASE_URL=... ERP_ADMIN_EMAIL=admin@teste.com ERP_ADMIN_PASSWORD=SenhaAdmin#12345 npm run build && npm start
-BASE_URL=http://127.0.0.1:3000 npm test                      # em banco VAZIO
-node seed.mjs                                                # opcional: dados demo (ver cabeçalho do arquivo)
-```
-Lição registrada: um ajuste em `select.tsx` (medição de posição + `setPos` em `useLayoutEffect`) causou "Maximum update depth" (React #185) e derrubava a tela ao abrir qualquer lista suspensa. Corrigido renderizando o menu em portal (no `<dialog>` se houver, senão no `<body>`). **Sempre abrir as telas no navegador após mexer em componentes de UI.**
+Pendências técnicas: extrato **real** do Thyago (leitor espera Data/Descrição/Valor; OFX não suportado); MFA e recuperação de senha; testes de UI (Playwright) e CI; anexos >4 MB via Supabase Storage; notificação ao presidente (standby); permissões granulares (alçada por valor, escopo por CNPJ).
+
+## 7. Próximos passos
+Ver **[PLANO.md](PLANO.md)** (ordem aprovada: Contas a Receber → Tesouraria → integrações Asaas/Luna Pay/EFI → Controladoria e Orçamento → Comissionamento → Relatórios). O roadmap original do Thyago está em `docs/ERP_Finance_Documentacao_v0.2.md`.

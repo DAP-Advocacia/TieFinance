@@ -86,5 +86,6 @@ HANDOFF.md          Estado atual, decisões, deploy e pendências
 Tokens no `:root` de `src/app/globals.css` (azul `#08245d`, ouro `#d4af37`, Plus Jakarta Sans). Regra: só tokens, ouro em no máximo 1–2 pontos por tela, estados em pares texto escuro/fundo suave, `tabular-nums` em valores.
 
 ## Documentação
-- [HANDOFF.md](HANDOFF.md) — leia antes de continuar o projeto (inclui o passo a passo do deploy na Vercel).
+- [HANDOFF.md](HANDOFF.md) — estado atual, arquitetura, regras, banco, deploy e cuidados. **Leia antes de continuar.**
+- [PLANO.md](PLANO.md) — próximos módulos (Contas a Receber, Tesouraria, integrações bancárias, Controladoria, Comissionamento, Relatórios).
 - [docs/ERP_Finance_Documentacao_v0.2.md](docs/ERP_Finance_Documentacao_v0.2.md) — visão de produto/roadmap (planejamento do Thyago, v0.2).
